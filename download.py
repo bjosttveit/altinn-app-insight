@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import os
@@ -33,8 +34,13 @@ class Keys(TypedDict):
     studioDev: str | None
 
 
+class Args:
+    retry_failed: bool
+
+
 @dataclass
 class Context:
+    args: Args
     cache_dir: Path
     prev_version_lock: VersionLock
     next_version_lock: VersionLock
@@ -238,9 +244,7 @@ class QueryClient:
             for release in res["results"]:
                 if release["tagName"] == deployment.version:
                     commit_sha = release["targetCommitish"]
-                    return Release(
-                        deployment.env, deployment.org, deployment.app, deployment.version, commit_sha, dev=False
-                    )
+                    return Release(deployment.env, deployment.org, deployment.app, deployment.version, commit_sha, dev=dev)
         except:
             pass
 
@@ -264,49 +268,49 @@ class QueryClient:
 
         if (release.dev and self.context.tokenDev is None) or (not release.dev and self.context.tokenProd is None):
             print(f"Skipping {release.key} due to missing studio token")
+            return
 
         prev_version = self.context.prev_version_lock.get(release.key)
 
-        if prev_version is not None and prev_version.get("status") == "failed":
+        if prev_version is not None and prev_version.get("status") == "failed" and not self.context.args.retry_failed:
             print(f"Skipping {release.key} due to previous failure")
             self.context.next_version_lock[release.key] = makeLock(release, "failed")
             return
 
-        if prev_version is None or release.version != prev_version.get("version"):
-            await self.download_queue.get()
-            print(f"Downloading {release.key}")
-
-            file_path = Path.joinpath(self.context.cache_dir, f"{release.key}.zip")
-            try:
-                async with aiofiles.open(file_path, "wb") as f:
-                    async with self.client.stream(
-                        "GET",
-                        release.repo_download_url,
-                        follow_redirects=True,
-                        headers={
-                            "Authorization": f"token {self.context.tokenProd if not release.dev else self.context.tokenDev}"
-                        },
-                    ) as response:
-                        response.raise_for_status()
-                        async for chunk in response.aiter_bytes(chunk_size=4096):
-                            await f.write(chunk)
-
-                self.context.next_version_lock[release.key] = makeLock(release, "success")
-            except Exception:
-                print(f"Failed to download {release.key}")
-                self.context.next_version_lock[release.key] = makeLock(release, "failed")
-                try:
-                    await aiofiles.os.remove(file_path)
-                except:
-                    pass
-            finally:
-                self.download_queue.put_nowait(None)
-        else:
+        if prev_version is not None and prev_version.get("status") == "success" and release.version == prev_version.get("version"):
             print(f"Already up to date: {release.key}")
             self.context.next_version_lock[release.key] = makeLock(release, "success")
+            return
+
+        await self.download_queue.get()
+        print(f"Downloading {release.key}")
+
+        file_path = Path.joinpath(self.context.cache_dir, f"{release.key}.zip")
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                async with self.client.stream(
+                    "GET",
+                    release.repo_download_url,
+                    follow_redirects=True,
+                    headers={"Authorization": f"token {self.context.tokenProd if not release.dev else self.context.tokenDev}"},
+                ) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes(chunk_size=4096):
+                        await f.write(chunk)
+
+            self.context.next_version_lock[release.key] = makeLock(release, "success")
+        except Exception:
+            print(f"Failed to download {release.key}")
+            self.context.next_version_lock[release.key] = makeLock(release, "failed")
+            try:
+                await aiofiles.os.remove(file_path)
+            except:
+                pass
+        finally:
+            self.download_queue.put_nowait(None)
 
 
-async def main():
+async def main(args: Args):
 
     key_path = Path("./key.json")
     keys: Keys
@@ -333,9 +337,9 @@ async def main():
     next_version_lock: VersionLock = {}
 
     client = QueryClient(
-        Context(cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev")),
-        max_concurrent_requests=20,
-        max_concurrent_downloads=20,
+        Context(args, cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev")),
+        max_concurrent_requests=5,
+        max_concurrent_downloads=5,
     )
 
     async def stage_1(cluster: Cluster):
@@ -370,4 +374,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Download Altinn apps")
+    parser.add_argument(
+        "--retry-failed",
+        help="Retry downloading apps that previously failed",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    args = parser.parse_args(namespace=Args())
+    asyncio.run(main(args))
