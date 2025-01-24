@@ -283,8 +283,6 @@ class QueryClient:
             return
 
         await self.download_queue.get()
-        print(f"Downloading {release.key}")
-
         file_path = Path.joinpath(self.context.cache_dir, f"{release.key}.zip")
         try:
             async with aiofiles.open(file_path, "wb") as f:
@@ -298,6 +296,7 @@ class QueryClient:
                     async for chunk in response.aiter_bytes(chunk_size=4096):
                         await f.write(chunk)
 
+            print(f"Successfully downloaded {release.key}")
             self.context.next_version_lock[release.key] = makeLock(release, "success")
         except Exception:
             print(f"Failed to download {release.key}")
@@ -339,7 +338,7 @@ async def main(args: Args):
     client = QueryClient(
         Context(args, cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev")),
         max_concurrent_requests=5,
-        max_concurrent_downloads=5,
+        max_concurrent_downloads=1,
     )
 
     async def stage_1(cluster: Cluster):
