@@ -2,12 +2,12 @@ import argparse
 import asyncio
 import json
 import os
-import pickle
 from asyncio import Queue
-from asyncio.futures import Future
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, TypedDict
+from urllib.parse import urlparse
 
 import aiofiles
 import aiofiles.os
@@ -27,6 +27,8 @@ class LockData(TypedDict):
     version: str
     commit_sha: str
     status: Status
+    dev_altinn_studio: bool
+    time_fetched: str
 
 
 class Keys(TypedDict):
@@ -78,6 +80,7 @@ class Release:
     version: str
     commit_sha: str
     dev: bool
+    time_fetched: str
 
     @property
     def key(self):
@@ -108,6 +111,8 @@ def makeLock(release: Release, status: Status) -> LockData:
         "version": release.version,
         "commit_sha": release.commit_sha,
         "status": status,
+        "dev_altinn_studio": release.dev,
+        "time_fetched": release.time_fetched,
     }
 
 
@@ -145,54 +150,40 @@ class ReleasesResponse(TypedDict):
 
 
 class QueryClient:
-    def __init__(self, context: Context, max_concurrent_requests=10, max_concurrent_downloads=10):
+    def __init__(self, context: Context, max_concurrent_requests=2):
         self.context = context
         self.client = httpx.AsyncClient()
-
-        self.request_queue = Queue()
-        [self.request_queue.put_nowait(None) for _ in range(max_concurrent_requests)]
-
-        self.download_queue = Queue()
-        [self.download_queue.put_nowait(None) for _ in range(max_concurrent_downloads)]
-
-        self.request_cache: dict[str, Future] = {}
-        self.cache_path = Path.joinpath(self.context.cache_dir, ".request.cache")
-
-        # TODO make cache serializable
-        # if self.cache_path.exists():
-        #     with open(self.cache_path, "rb") as f:
-        #         self.request_cache = pickle.load(f)
+        self.max_concurrent_requests = max_concurrent_requests
+        self.queues: dict[str, Queue] = {}
 
     async def close(self):
         await self.client.aclose()
-        # TODO make cache serializable
-        # with open(self.cache_path, "wb") as f:
-        #     pickle.dump(self.request_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    async def __get_remote_json(self, url: str, future: Future):
-        await self.request_queue.get()
+    async def queue_get(self, url: str):
+        domain = urlparse(url).netloc
+        if (queue := self.queues.get(domain)) is None:
+            queue = Queue()
+            [queue.put_nowait(None) for _ in range(self.max_concurrent_requests)]
+            self.queues[domain] = queue
+
+        await queue.get()
+
+    def queue_put(self, url: str):
+        domain = urlparse(url).netloc
+        self.queues[domain].put_nowait(None)
+
+    async def __fetch_json(self, url: str):
+        await self.queue_get(url)
         try:
             res = await self.client.get(url)
-            future.set_result(res.json())
-        except Exception as e:
-            future.set_exception(e)
+            return res.json()
         finally:
-            self.request_queue.put_nowait(None)
-
-    # Allows multiple requests for the same URL to only be called once and cached
-    def __get_json(self, url: str) -> Future:
-        cached_result = self.request_cache.get(url)
-        if cached_result is not None:
-            return cached_result
-        future = asyncio.get_event_loop().create_future()
-        self.request_cache[url] = future
-        asyncio.create_task(self.__get_remote_json(url, future))
-        return future
+            self.queue_put(url)
 
     async def fetch_clusters(self) -> list[Cluster] | None:
         res: OrgsResponse
         try:
-            res = await self.__get_json("https://altinncdn.no/orgs/altinn-orgs.json")
+            res = await self.__fetch_json("https://altinncdn.no/orgs/altinn-orgs.json")
         except:
             print("Failed to fetch clusters")
             return
@@ -214,7 +205,7 @@ class QueryClient:
 
         res: list[RawDeployment]
         try:
-            res = await self.__get_json(deployments_url)
+            res = await self.__fetch_json(deployments_url)
         except:
             print(f"Failed to fetch deployments for {cluster.key}")
             return
@@ -236,7 +227,7 @@ class QueryClient:
 
     async def try_fetch_release(self, deployment: Deployment, dev: bool) -> Release | None:
         try:
-            res: ReleasesResponse = await self.__get_json(
+            res: ReleasesResponse = await self.__fetch_json(
                 f"https://altinn.studio/designer/api/{deployment.org}/{deployment.app}/releases"
                 if not dev
                 else f"https://dev.altinn.studio/designer/api/{deployment.org}/{deployment.app}/releases"
@@ -244,11 +235,34 @@ class QueryClient:
             for release in res["results"]:
                 if release["tagName"] == deployment.version:
                     commit_sha = release["targetCommitish"]
-                    return Release(deployment.env, deployment.org, deployment.app, deployment.version, commit_sha, dev=dev)
+                    return Release(
+                        deployment.env,
+                        deployment.org,
+                        deployment.app,
+                        deployment.version,
+                        commit_sha,
+                        dev,
+                        datetime.now(timezone.utc).isoformat(),
+                    )
         except:
             pass
 
     async def fetch_release(self, deployment: Deployment) -> Release | None:
+        prev_version = self.context.prev_version_lock.get(deployment.key)
+        if prev_version is not None and datetime.now(timezone.utc) - datetime.fromisoformat(prev_version.get("time_fetched")) < timedelta(
+            hours=1
+        ):
+            print(f"Using cached release for {deployment.key}")
+            return Release(
+                deployment.env,
+                deployment.org,
+                deployment.app,
+                deployment.version,
+                prev_version.get("commit_sha"),
+                prev_version.get("dev_altinn_studio"),
+                prev_version.get("time_fetched"),
+            )
+
         if self.context.tokenProd is not None:
             release_from_prod = await self.try_fetch_release(deployment, False)
             if release_from_prod is not None:
@@ -282,7 +296,7 @@ class QueryClient:
             self.context.next_version_lock[release.key] = makeLock(release, "success")
             return
 
-        await self.download_queue.get()
+        await self.queue_get(release.repo_download_url)
         file_path = Path.joinpath(self.context.cache_dir, f"{release.key}.zip")
         try:
             async with aiofiles.open(file_path, "wb") as f:
@@ -306,7 +320,7 @@ class QueryClient:
             except:
                 pass
         finally:
-            self.download_queue.put_nowait(None)
+            self.queue_put(release.repo_download_url)
 
 
 async def main(args: Args):
@@ -337,8 +351,6 @@ async def main(args: Args):
 
     client = QueryClient(
         Context(args, cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev")),
-        max_concurrent_requests=5,
-        max_concurrent_downloads=1,
     )
 
     async def stage_1(cluster: Cluster):

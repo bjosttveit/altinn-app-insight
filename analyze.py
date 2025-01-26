@@ -27,6 +27,8 @@ class LockData(TypedDict):
     version: str
     commit_sha: str
     status: Status
+    dev_altinn_studio: bool
+    time_fetched: str
 
 
 @dataclass
@@ -51,9 +53,7 @@ class App:
         return self.app_dir.joinpath(self.file_name)
 
 
-def get_apps(
-    lock_file: VersionLock, cache_dir: Path, env: Environment | None = None, org: str | None = None
-) -> list[App]:
+def get_apps(lock_file: VersionLock, cache_dir: Path, env: Environment | None = None, org: str | None = None) -> list[App]:
     apps: list[App] = []
     for lock_data in lock_file.values():
         if lock_data["status"] == "failed":
@@ -108,10 +108,10 @@ async def main():
         with open(lock_path, "r") as f:
             version_lock = json.load(f)
 
-    apps = get_apps(version_lock, cache_dir, env="tt02", org="ttd")
-    # print(len(apps))
-    for app in apps:
-        print(f"{app.key}: {get_app_backend_version(app)} | {get_apps_frontend_version(app)}")
+    apps = get_apps(version_lock, cache_dir)
+    print(len(apps))
+    # for app in apps:
+    #     print(f"{app.key}: {get_app_backend_version(app)} | {get_apps_frontend_version(app)}")
 
 
 if __name__ == "__main__":
