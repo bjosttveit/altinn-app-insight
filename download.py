@@ -28,7 +28,6 @@ class LockData(TypedDict):
     commit_sha: str
     status: Status
     dev_altinn_studio: bool
-    time_fetched: str
 
 
 class Keys(TypedDict):
@@ -80,7 +79,6 @@ class Release:
     version: str
     commit_sha: str
     dev: bool
-    time_fetched: str
 
     @property
     def key(self):
@@ -112,7 +110,6 @@ def makeLock(release: Release, status: Status) -> LockData:
         "commit_sha": release.commit_sha,
         "status": status,
         "dev_altinn_studio": release.dev,
-        "time_fetched": release.time_fetched,
     }
 
 
@@ -242,26 +239,38 @@ class QueryClient:
                         deployment.version,
                         commit_sha,
                         dev,
-                        datetime.now(timezone.utc).isoformat(),
                     )
         except:
             pass
 
     async def fetch_release(self, deployment: Deployment) -> Release | None:
         prev_version = self.context.prev_version_lock.get(deployment.key)
-        if prev_version is not None and datetime.now(timezone.utc) - datetime.fromisoformat(prev_version.get("time_fetched")) < timedelta(
-            hours=1
-        ):
-            print(f"Using cached release for {deployment.key}")
-            return Release(
-                deployment.env,
-                deployment.org,
-                deployment.app,
-                deployment.version,
-                prev_version.get("commit_sha"),
-                prev_version.get("dev_altinn_studio"),
-                prev_version.get("time_fetched"),
-            )
+
+        if prev_version is not None:
+            if prev_version.get("status") == "failed" and not self.context.args.retry_failed:
+                print(f"Skipping {deployment.key} due to previous failure")
+                self.context.next_version_lock[deployment.key] = prev_version
+                return
+
+            if (
+                prev_version.get("status") == "failed"
+                and self.context.args.retry_failed
+                and deployment.version == prev_version.get("version")
+            ):
+                print(f"Using cached release for {deployment.key}")
+                return Release(
+                    deployment.env,
+                    deployment.org,
+                    deployment.app,
+                    deployment.version,
+                    prev_version.get("commit_sha"),
+                    prev_version.get("dev_altinn_studio"),
+                )
+
+            if prev_version.get("status") == "success" and deployment.version == prev_version.get("version"):
+                print(f"Already up to date: {deployment.key}")
+                self.context.next_version_lock[deployment.key] = prev_version
+                return
 
         if self.context.tokenProd is not None:
             release_from_prod = await self.try_fetch_release(deployment, False)
@@ -279,21 +288,12 @@ class QueryClient:
         print(f"Could not find any matching releases for {deployment.key}")
 
     async def update_repository(self, release: Release):
+        prev_version = self.context.prev_version_lock.get(release.key)
 
         if (release.dev and self.context.tokenDev is None) or (not release.dev and self.context.tokenProd is None):
             print(f"Skipping {release.key} due to missing studio token")
-            return
-
-        prev_version = self.context.prev_version_lock.get(release.key)
-
-        if prev_version is not None and prev_version.get("status") == "failed" and not self.context.args.retry_failed:
-            print(f"Skipping {release.key} due to previous failure")
-            self.context.next_version_lock[release.key] = makeLock(release, "failed")
-            return
-
-        if prev_version is not None and prev_version.get("status") == "success" and release.version == prev_version.get("version"):
-            print(f"Already up to date: {release.key}")
-            self.context.next_version_lock[release.key] = makeLock(release, "success")
+            if prev_version is not None:
+                self.context.next_version_lock[release.key] = prev_version
             return
 
         await self.queue_get(release.repo_download_url)
