@@ -147,7 +147,7 @@ class ReleasesResponse(TypedDict):
 
 
 class QueryClient:
-    def __init__(self, context: Context, max_concurrent_requests=2):
+    def __init__(self, context: Context, max_concurrent_requests=3):
         self.context = context
         self.client = httpx.AsyncClient()
         self.max_concurrent_requests = max_concurrent_requests
@@ -331,7 +331,7 @@ async def main(args: Args):
         with open(key_path, "r") as f:
             keys = json.load(f)
             if keys.get("studioProd") is None and keys.get("studioDev") is None:
-                print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'keys.json' file")
+                print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'key.json' file")
                 exit(1)
     else:
         print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'keys.json' file")
