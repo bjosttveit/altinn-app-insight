@@ -6,11 +6,13 @@ import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import total_ordering
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Literal, Self, TypedDict, TypeVar
+from typing import (Callable, Iterable, Iterator, Literal, Self, TypedDict,
+                    TypeVar)
 
 FETCH_FAILED = "fetch-failed"
 
@@ -28,36 +30,119 @@ class LockData(TypedDict):
     status: Status
     dev_altinn_studio: bool
 
+VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
 
-@total_ordering
-class Version:
+class Version(str):
     def __init__(self, version_string: str | None):
-        self.version_string = version_string
+        self.__version_string = version_string
+        self.__match = re.match(VERSION_REGEX, version_string) if version_string is not None else None
+        self.major = int(self.__match.group(1)) if self.__match and self.__match.group(1) is not None else None
+        self.minor = int(self.__match.group(3)) if self.__match and self.__match.group(3) is not None else None
+        self.patch = int(self.__match.group(5)) if self.__match and self.__match.group(5) is not None else None
+        self.preview = self.__match.group(7) if self.__match and self.__match.group(7) is not None else None
 
     def __repr__(self):
-        return self.version_string if self.version_string is not None else "None"
+        return self.__version_string if self.__version_string is not None else "None"
 
-    def __eq__(self, other):
-        other_version_string = other.version_string if isinstance(other, Version) else other if type(other) == str else None
+    def __le__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
 
-        if other_version_string is None:
+        return self == other or self < other
+
+    def __ge__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
+
+        return self == other or self > other
+
+    def __ne__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
+
+        return self.__version_string != other.__version_string
+
+    def __eq__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
+
+        return self.__version_string == other.__version_string
+
+    def __lt__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
+
+        if self.major is None or other.major is None:
+            # This should never happen since it will not match unless this exists
             return NotImplemented
+        if self.major != other.major:
+            return self.major < other.major
 
-        return other_version_string == self.version_string
+        if self.minor != other.minor:
+            if self.minor is None:
+                return False
+            if other.minor is None:
+                return True
+            return self.minor < other.minor
 
-    def __lt__(self, other):
-        other_version_string = other.version_string if isinstance(other, Version) else other if type(other) == str else None
+        if self.patch != other.patch:
+            if self.patch is None:
+                return False
+            if other.patch is None:
+                return True
+            return self.patch < other.patch
 
-        if other_version_string is None:
+        if self.preview != other.preview:
+            if self.preview is None:
+                return True
+            if other.preview is None:
+                return False
+
+
+        return False
+
+    def __gt__(self, other_version):
+        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        if not self.exists or other is None or not other.exists:
+            return False
+
+        if self.major is None or other.major is None:
+            # This should never happen since it will not match unless this exists
             return NotImplemented
+        if self.major != other.major:
+            return self.major > other.major
 
-        # TODO: Implement less than operator
-        return True
+        if self.minor != other.minor:
+            if self.minor is None:
+                return True
+            if other.minor is None:
+                return False
+            return self.minor > other.minor
+
+        if self.patch != other.patch:
+            if self.patch is None:
+                return True
+            if other.patch is None:
+                return False
+            return self.patch > other.patch
+
+        if self.preview != other.preview:
+            if self.preview is None:
+                return False
+            if other.preview is None:
+                return True
+
+
+        return False
 
     @property
     def exists(self):
-        return self.version_string is not None
-
+        return self.__match is not None
 
 class AppMeta:
     def __init__(self, env: Environment, org: str, app: str, app_dir: Path):
@@ -87,6 +172,9 @@ class AppMeta:
 
 
 class AppContent(AppMeta):
+    __frontend_version: Version | None = None
+    __backend_version: Version | None = None
+
     def __init__(self, env: Environment, org: str, app: str, app_dir: Path, file: BufferedReader):
         super().__init__(env, org, app, app_dir)
         self.__file = file
@@ -114,23 +202,25 @@ class AppContent(AppMeta):
 
     @property
     def frontend_version(self) -> Version:
+        if self.__frontend_version is not None:
+            return self.__frontend_version
         match = self.first_match(
             r"/App/views/Home/Index.cshtml$",
             r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"',
         )
-        if match is not None:
-            return Version(match.group(1))
-        return Version(None)
+        self.__frontend_version = Version(match.group(1)) if match is not None else Version(None)
+        return self.__frontend_version
 
     @property
     def backend_version(self) -> Version:
+        if self.__backend_version is not None:
+            return self.__backend_version
         match = self.first_match(
             r"/App/[^/]+.csproj$",
             r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"',
         )
-        if match is not None:
-            return Version(match.group(3))
-        return Version(None)
+        self.__backend_version = Version(match.group(3)) if match is not None else Version(None)
+        return self.__backend_version
 
 
 T = TypeVar("T")
@@ -197,7 +287,7 @@ class Apps:
         (a,) = self.__get_iter()
         return Apps(filter(func, a), self.__executor)
 
-    def where(self, __func: Callable[[AppContent], bool]) -> Apps:
+    def where_content(self, __func: Callable[[AppContent], bool]) -> Apps:
         a, b = self.__get_iter(2)
         func = wrap_func_app_open(__func)
         return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
@@ -206,7 +296,7 @@ class Apps:
         (a,) = self.__get_iter()
         return map(func, a)
 
-    def select(self, __func: Callable[[AppContent], T]) -> Iterable[T]:
+    def select_content(self, __func: Callable[[AppContent], T]) -> Iterable[T]:
         (a,) = self.__get_iter()
         func = wrap_func_app_open(__func)
         return self.__executor.map(func, a)
@@ -219,12 +309,15 @@ async def main():
 
         start = time.time()
 
-        data = (
-            apps.where_meta(lambda app: app.env == "prod")
-            .where(lambda app: app.frontend_version == "4" and app.backend_version == "8.0.0")
-            .select(lambda app: (app.frontend_version, app.backend_version))
-        )
-        print(list(data))
+
+        data = apps.where_meta(lambda app: app.env == 'prod').where_content(lambda app: app.frontend_version > "3.0.0" and app.frontend_version < "4.0.0")
+        print(data.length())
+        # data = (
+        #     apps.where_meta(lambda app: app.env == "prod")
+        #     .where_content(lambda app: app.frontend_version == "4" and app.backend_version == "8.0.0")
+        #     .select_content(lambda app: (app.frontend_version, app.backend_version))
+        # )
+        # print(list(data))
 
         print(f"Time: {time.time() - start:.2f}s")
 
