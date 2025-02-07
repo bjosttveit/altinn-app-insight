@@ -11,6 +11,7 @@ type Environment = Literal["prod", "tt02"]
 type VersionLock = dict[str, LockData]
 type Status = Literal["success"] | Literal["failed"]
 
+
 class LockData(TypedDict):
     env: Environment
     org: str
@@ -19,6 +20,7 @@ class LockData(TypedDict):
     commit_sha: str
     status: Status
     dev_altinn_studio: bool
+
 
 @dataclass
 class App:
@@ -39,8 +41,9 @@ class App:
     def file_path(self):
         return self.app_dir.joinpath(self.file_name)
 
+
 def read_file(app: App):
-    with open(app.file_path, 'rb') as f:
+    with open(app.file_path, "rb") as f:
         return f.read()
 
 
