@@ -6,14 +6,13 @@ import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 from dataclasses import dataclass
 from functools import total_ordering
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
-from typing import (Callable, Iterable, Iterator, Literal, Self, TypedDict,
-                    TypeVar)
+from typing import (Callable, Generic, Iterable, Iterator, Literal, Self,
+                    TypedDict, TypeVar)
 
 from tabulate import tabulate
 
@@ -147,22 +146,19 @@ class Version(str):
     def exists(self):
         return self.__match is not None
 
-class AppMeta:
-    data: dict[str, object] | None = None
-
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path):
+class AppMeta():
+    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data = {}):
         self.env: Environment = env
         self.org = org
         self.app = app
         self.__app_dir = app_dir
+        self.data = data
 
     def __repr__(self):
         return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt='simple_grid')
 
     def with_data(self, data: dict[str, object]):
-        new_app = deepcopy(self)
-        new_app.data = data
-        return new_app
+        return AppMeta(self.env, self.org, self.app, self.__app_dir, data)
 
     @property
     def key(self):
@@ -178,15 +174,15 @@ class AppMeta:
 
     def open(self) -> AppContent:
         f = open(self.file_path, "rb")
-        return AppContent(self.env, self.org, self.app, self.__app_dir, f)
+        return AppContent(self.env, self.org, self.app, self.__app_dir, self.data, f)
 
 
 class AppContent(AppMeta):
     __frontend_version: Version | None = None
     __backend_version: Version | None = None
 
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, file: BufferedReader):
-        super().__init__(env, org, app, app_dir)
+    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data: dict[str, object], file: BufferedReader):
+        super().__init__(env, org, app, app_dir, data)
         self.__file = file
         self.__zip_file = zipfile.ZipFile(self.__file)
         self.files = self.__zip_file.namelist()
@@ -246,7 +242,7 @@ def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[AppMeta], T]:
 def wrap_with_data(func: Callable[[AppMeta], dict[str, object]]) -> Callable[[AppMeta], AppMeta]:
     return lambda app: app.with_data(func(app))
 
-class Apps:
+class Apps():
     def __init__(self, apps: Iterable[AppMeta], executor: ThreadPoolExecutor):
         self.__apps = apps
         self.__apps_list: list[AppMeta] | None = None
@@ -257,8 +253,8 @@ class Apps:
         if len(apps) == 0:
             print("Count: 0")
 
-        headers = ["Env", "Org", "App", *apps[0].data.keys()] if apps[0].data is not None else ["Env", "Org", "App"]
-        data = [[app.env, app.org, app.app, *app.data.values()] if app.data is not None else [app.env, app.org, app.app] for app in apps]
+        headers = ["Env", "Org", "App", *apps[0].data.keys()]
+        data = [[app.env, app.org, app.app, *app.data.values()] for app in apps]
         table = tabulate(data, headers=headers, tablefmt='simple_grid')
 
         return f"{table}\nCount: {self.length()}"
@@ -322,6 +318,11 @@ class Apps:
         func = wrap_with_data(wrap_open_app(__func))
         return Apps(self.__executor.map(func, a), self.__executor)
 
+    def select_meta(self, __func: Callable[[AppMeta], dict[str, object]]) -> Apps:
+        (a,) = self.__get_iter()
+        func = wrap_with_data(__func)
+        return Apps(map(func, a), self.__executor)
+
 
 async def main():
     cache_dir = Path("./data")
@@ -344,7 +345,8 @@ async def main():
         print(
             apps.where_meta(lambda app: app.env == "prod")
             .where(lambda app: app.frontend_version.major == 4 and app.frontend_version != "4")
-            .select(lambda app: {"Version": app.frontend_version})
+            .select_meta(lambda app: {**app.data, "File name": app.file_name})
+            .select(lambda app: {**app.data, "Version": app.frontend_version})
         )
 
         # print(data.length())
