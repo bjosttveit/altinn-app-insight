@@ -6,6 +6,7 @@ import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import total_ordering
 from io import BufferedReader
@@ -13,6 +14,8 @@ from itertools import compress, tee
 from pathlib import Path
 from typing import (Callable, Iterable, Iterator, Literal, Self, TypedDict,
                     TypeVar)
+
+from tabulate import tabulate
 
 FETCH_FAILED = "fetch-failed"
 
@@ -79,7 +82,7 @@ class Version(str):
 
         if self.major is None or other.major is None:
             # This should never happen since it will not match unless this exists
-            return NotImplemented
+            return False
         if self.major != other.major:
             return self.major < other.major
 
@@ -113,7 +116,7 @@ class Version(str):
 
         if self.major is None or other.major is None:
             # This should never happen since it will not match unless this exists
-            return NotImplemented
+            return False
         if self.major != other.major:
             return self.major > other.major
 
@@ -145,6 +148,8 @@ class Version(str):
         return self.__match is not None
 
 class AppMeta:
+    data: dict[str, object] | None = None
+
     def __init__(self, env: Environment, org: str, app: str, app_dir: Path):
         self.env: Environment = env
         self.org = org
@@ -152,7 +157,12 @@ class AppMeta:
         self.__app_dir = app_dir
 
     def __repr__(self):
-        return self.key
+        return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt='simple_grid')
+
+    def with_data(self, data: dict[str, object]):
+        new_app = deepcopy(self)
+        new_app.data = data
+        return new_app
 
     @property
     def key(self):
@@ -226,19 +236,34 @@ class AppContent(AppMeta):
 T = TypeVar("T")
 
 
-def wrap_func_app_open(func: Callable[[AppContent], T]) -> Callable[[AppMeta], T]:
+def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[AppMeta], T]:
     def __func(app: AppMeta):
         with app.open() as app_data:
             return func(app_data)
 
     return __func
 
+def wrap_with_data(func: Callable[[AppMeta], dict[str, object]]) -> Callable[[AppMeta], AppMeta]:
+    return lambda app: app.with_data(func(app))
 
 class Apps:
     def __init__(self, apps: Iterable[AppMeta], executor: ThreadPoolExecutor):
         self.__apps = apps
         self.__apps_list: list[AppMeta] | None = None
         self.__executor = executor
+
+    def __repr__(self):
+        apps = self.to_list()
+        if len(apps) == 0:
+            print("Count: 0")
+
+        headers = ["Env", "Org", "App", *apps[0].data.keys()] if apps[0].data is not None else ["Env", "Org", "App"]
+        data = [[app.env, app.org, app.app, *app.data.values()] if app.data is not None else [app.env, app.org, app.app] for app in apps]
+        table = tabulate(data, headers=headers, tablefmt='simple_grid')
+
+        return f"{table}\nCount: {self.length()}"
+
+
 
     def __enter__(self):
         return self
@@ -287,31 +312,42 @@ class Apps:
         (a,) = self.__get_iter()
         return Apps(filter(func, a), self.__executor)
 
-    def where_content(self, __func: Callable[[AppContent], bool]) -> Apps:
+    def where(self, __func: Callable[[AppContent], bool]) -> Apps:
         a, b = self.__get_iter(2)
-        func = wrap_func_app_open(__func)
+        func = wrap_open_app(__func)
         return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
 
-    def select_meta(self, func: Callable[[AppMeta], T]) -> Iterable[T]:
+    def select(self, __func: Callable[[AppContent], dict[str, object]]) -> Apps:
         (a,) = self.__get_iter()
-        return map(func, a)
-
-    def select_content(self, __func: Callable[[AppContent], T]) -> Iterable[T]:
-        (a,) = self.__get_iter()
-        func = wrap_func_app_open(__func)
-        return self.__executor.map(func, a)
+        func = wrap_with_data(wrap_open_app(__func))
+        return Apps(self.__executor.map(func, a), self.__executor)
 
 
 async def main():
     cache_dir = Path("./data")
 
-    with Apps.init(cache_dir, max_open_files=2) as apps:
+    with Apps.init(cache_dir, max_open_files=100) as apps:
 
         start = time.time()
 
 
-        data = apps.where_meta(lambda app: app.env == 'prod').where_content(lambda app: app.frontend_version > "3.0.0" and app.frontend_version < "4.0.0")
-        print(data.length())
+        # data = apps.where_meta(lambda app: app.env == 'tt02').where_content(lambda app: app.frontend_version >= "4.0.0" and app.frontend_version != "4" and app.frontend_version.preview is None)
+        # apps_v4 = apps.where_meta(lambda app: app.env == 'prod').where_content(lambda app: app.frontend_version.major == 4 and app.frontend_version.preview is None)
+        # apps_locked = apps_v4.where_content(lambda app: app.frontend_version != "4")
+        # print(f"{apps_locked.length()} / {apps_v4.length()}")
+        
+        # print(
+        #     apps.where_content(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview)
+        #     .select_content(lambda app: {"Version": app.frontend_version})
+        # )
+
+        print(
+            apps.where_meta(lambda app: app.env == "prod")
+            .where(lambda app: app.frontend_version.major == 4 and app.frontend_version != "4")
+            .select(lambda app: {"Version": app.frontend_version})
+        )
+
+        # print(data.length())
         # data = (
         #     apps.where_meta(lambda app: app.env == "prod")
         #     .where_content(lambda app: app.frontend_version == "4" and app.backend_version == "8.0.0")
@@ -319,6 +355,7 @@ async def main():
         # )
         # print(list(data))
 
+        print()
         print(f"Time: {time.time() - start:.2f}s")
 
 
