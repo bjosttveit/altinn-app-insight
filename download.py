@@ -4,30 +4,15 @@ import json
 import os
 from asyncio import Queue
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import TypedDict
 from urllib.parse import urlparse
 
 import aiofiles
 import aiofiles.os
 import httpx
 
-FETCH_FAILED = "fetch-failed"
-
-type Environment = Literal["prod", "tt02"]
-type VersionLock = dict[str, LockData]
-type Status = Literal["success"] | Literal["failed"]
-
-
-class LockData(TypedDict):
-    env: Environment
-    org: str
-    app: str
-    version: str
-    commit_sha: str
-    status: Status
-    dev_altinn_studio: bool
+from package import Cluster, Deployment, Release, VersionLock, get_valid_envs, makeLock
 
 
 class Keys(TypedDict):
@@ -47,81 +32,6 @@ class Context:
     next_version_lock: VersionLock
     tokenProd: str | None
     tokenDev: str | None
-
-
-@dataclass
-class Cluster:
-    env: Environment
-    org: str
-
-    @property
-    def key(self):
-        return f"{self.env}-{self.org}"
-
-
-@dataclass
-class Deployment:
-    env: Environment
-    org: str
-    app: str
-    version: str
-
-    @property
-    def key(self):
-        return f"{self.env}-{self.org}-{self.app}"
-
-
-@dataclass
-class Release:
-    env: Environment
-    org: str
-    app: str
-    version: str
-    commit_sha: str
-    dev: bool
-
-    @property
-    def key(self):
-        return f"{self.env}-{self.org}-{self.app}"
-
-    @property
-    def repo_url(self):
-        return (
-            f"https://altinn.studio/repos/{self.org}/{self.app}.git"
-            if not self.dev
-            else f"https://dev.altinn.studio/repos/{self.org}/{self.app}.git"
-        )
-
-    @property
-    def repo_download_url(self):
-        return (
-            f"https://altinn.studio/repos/{self.org}/{self.app}/archive/{self.commit_sha}.zip"
-            if not self.dev
-            else f"https://dev.altinn.studio/repos/{self.org}/{self.app}/archive/{self.commit_sha}.zip"
-        )
-
-
-def makeLock(release: Release, status: Status) -> LockData:
-    return {
-        "env": release.env,
-        "org": release.org,
-        "app": release.app,
-        "version": release.version,
-        "commit_sha": release.commit_sha,
-        "status": status,
-        "dev_altinn_studio": release.dev,
-    }
-
-
-def get_valid_envs(raw_envs: list[str]) -> list[Environment]:
-    out: list[Environment] = []
-    for raw in raw_envs:
-        match raw:
-            case "tt02":
-                out.append("tt02")
-            case "production":
-                out.append("prod")
-    return out
 
 
 class RawOrg(TypedDict):
@@ -149,11 +59,14 @@ class ReleasesResponse(TypedDict):
 class QueryClient:
     def __init__(self, context: Context, max_concurrent_requests=3):
         self.context = context
-        self.client = httpx.AsyncClient()
         self.max_concurrent_requests = max_concurrent_requests
         self.queues: dict[str, Queue] = {}
 
-    async def close(self):
+    async def __aenter__(self):
+        self.client = httpx.AsyncClient()
+        return self
+
+    async def __aexit__(self, *args, **kwargs):
         await self.client.aclose()
 
     async def queue_get(self, url: str):
@@ -349,39 +262,37 @@ async def main(args: Args):
 
     next_version_lock: VersionLock = {}
 
-    client = QueryClient(
-        Context(args, cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev")),
-    )
+    async with QueryClient(
+        Context(args, cache_dir, prev_version_lock, next_version_lock, keys.get("studioProd"), keys.get("studioDev"))
+    ) as client:
 
-    async def stage_1(cluster: Cluster):
-        deployments = await client.fetch_deployments(cluster)
-        if deployments is not None:
-            await asyncio.gather(*[stage_2(deployment) for deployment in deployments])
+        async def stage_1(cluster: Cluster):
+            deployments = await client.fetch_deployments(cluster)
+            if deployments is not None:
+                await asyncio.gather(*[stage_2(deployment) for deployment in deployments])
 
-    async def stage_2(deployment: Deployment):
-        release = await client.fetch_release(deployment)
-        if release is not None:
-            await client.update_repository(release)
+        async def stage_2(deployment: Deployment):
+            release = await client.fetch_release(deployment)
+            if release is not None:
+                await client.update_repository(release)
 
-    clusters = await client.fetch_clusters()
+        clusters = await client.fetch_clusters()
 
-    if clusters is not None:
-        try:
-            await asyncio.gather(*[stage_1(cluster) for cluster in clusters])
+        if clusters is not None:
+            try:
+                await asyncio.gather(*[stage_1(cluster) for cluster in clusters])
 
-            # Remove apps that no longer exist
-            for key in prev_version_lock.keys():
-                if next_version_lock.get(key) is None:
-                    print(f"Removing {key}")
-                    Path.joinpath(cache_dir, f"{key}.zip").unlink(missing_ok=True)
-        except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
-            pass
+                # Remove apps that no longer exist
+                for key in prev_version_lock.keys():
+                    if next_version_lock.get(key) is None:
+                        print(f"Removing {key}")
+                        Path.joinpath(cache_dir, f"{key}.zip").unlink(missing_ok=True)
+            except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+                pass
 
-        # Update lock file
-        with open(lock_path, "w") as f:
-            json.dump(next_version_lock, f, indent=2)
-
-    await client.close()
+            # Update lock file
+            with open(lock_path, "w") as f:
+                json.dump(next_version_lock, f, indent=2)
 
 
 if __name__ == "__main__":

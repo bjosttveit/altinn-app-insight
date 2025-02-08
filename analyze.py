@@ -7,145 +7,14 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import dataclass
-from functools import total_ordering
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
-from typing import Callable, Generic, Iterable, Iterator, Literal, Self, TypedDict, TypeVar, cast
+from typing import Callable, Generic, Iterable, Iterator, Self, TypeVar, cast
 
 from tabulate import tabulate
 
-FETCH_FAILED = "fetch-failed"
-
-type Environment = Literal["prod", "tt02"]
-type VersionLock = dict[str, LockData]
-type Status = Literal["success"] | Literal["failed"]
-
-
-class LockData(TypedDict):
-    env: Environment
-    org: str
-    app: str
-    version: str
-    commit_sha: str
-    status: Status
-    dev_altinn_studio: bool
-
-
-VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
-
-
-class Version(str):
-    def __init__(self, version_string: str | None):
-        self.__version_string = version_string
-        self.__match = re.match(VERSION_REGEX, version_string) if version_string is not None else None
-        self.major = int(self.__match.group(1)) if self.__match and self.__match.group(1) is not None else None
-        self.minor = int(self.__match.group(3)) if self.__match and self.__match.group(3) is not None else None
-        self.patch = int(self.__match.group(5)) if self.__match and self.__match.group(5) is not None else None
-        self.preview = self.__match.group(7) if self.__match and self.__match.group(7) is not None else None
-
-    def __repr__(self):
-        return self.__version_string if self.__version_string is not None else "None"
-
-    def __le__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        return self == other or self < other
-
-    def __ge__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        return self == other or self > other
-
-    def __ne__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        return self.__version_string != other.__version_string
-
-    def __eq__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        return self.__version_string == other.__version_string
-
-    def __lt__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        if self.major is None or other.major is None:
-            # This should never happen since it will not match unless this exists
-            return False
-        if self.major != other.major:
-            return self.major < other.major
-
-        if self.minor != other.minor:
-            if self.minor is None:
-                return False
-            if other.minor is None:
-                return True
-            return self.minor < other.minor
-
-        if self.patch != other.patch:
-            if self.patch is None:
-                return False
-            if other.patch is None:
-                return True
-            return self.patch < other.patch
-
-        if self.preview != other.preview:
-            if self.preview is None:
-                return True
-            if other.preview is None:
-                return False
-
-        return False
-
-    def __gt__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
-        if not self.exists or other is None or not other.exists:
-            return False
-
-        if self.major is None or other.major is None:
-            # This should never happen since it will not match unless this exists
-            return False
-        if self.major != other.major:
-            return self.major > other.major
-
-        if self.minor != other.minor:
-            if self.minor is None:
-                return True
-            if other.minor is None:
-                return False
-            return self.minor > other.minor
-
-        if self.patch != other.patch:
-            if self.patch is None:
-                return True
-            if other.patch is None:
-                return False
-            return self.patch > other.patch
-
-        if self.preview != other.preview:
-            if self.preview is None:
-                return False
-            if other.preview is None:
-                return True
-
-        return False
-
-    @property
-    def exists(self):
-        return self.__match is not None
-
+from package import Environment, Version, VersionLock
 
 P = TypeVar("P")
 
@@ -167,7 +36,7 @@ class PropertyAccessor(Generic[P]):
         return cast(P, self.__value)
 
 
-class AppMeta:
+class App:
     def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data={}):
         self.env: Environment = env
         self.org = org
@@ -178,7 +47,7 @@ class AppMeta:
     def __repr__(self):
         return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt="simple_grid")
 
-    def with_data(self, data: dict[str, object]):
+    def with_data(self, data: dict[str, object]) -> App:
         copy = deepcopy(self)
         copy.data = data
         return copy
@@ -200,7 +69,7 @@ class AppMeta:
         return AppContent(self.env, self.org, self.app, self.__app_dir, self.data, f)
 
 
-class AppContent(AppMeta):
+class AppContent(App):
     __frontend_version: Version | None = None
     __backend_version: Version | None = None
 
@@ -255,22 +124,22 @@ class AppContent(AppMeta):
 T = TypeVar("T")
 
 
-def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[AppMeta], T]:
-    def __func(app: AppMeta):
+def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[App], T]:
+    def __func(app: App):
         with app.open() as app_data:
             return func(app_data)
 
     return __func
 
 
-def wrap_with_data(func: Callable[[AppMeta], dict[str, object]]) -> Callable[[AppMeta], AppMeta]:
+def wrap_with_data(func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
     return lambda app: app.with_data(func(app))
 
 
 class Apps:
-    def __init__(self, apps: Iterable[AppMeta], executor: ThreadPoolExecutor):
+    def __init__(self, apps: Iterable[App], executor: ThreadPoolExecutor):
         self.__apps = apps
-        self.__apps_list: list[AppMeta] | None = None
+        self.__apps_list: list[App] | None = None
         self.__executor = executor
 
     def __repr__(self):
@@ -290,12 +159,12 @@ class Apps:
     def __exit__(self, type, value, traceback):
         self.__executor.shutdown()
 
-    def __get_iter(self, n: int = 1) -> tuple[Iterator[AppMeta], ...]:
+    def __get_iter(self, n: int = 1) -> tuple[Iterator[App], ...]:
         tup = tee(self.__apps, n + 1)
         self.__apps = tup[0]
         return tup[1:]
 
-    def __get_list(self) -> list[AppMeta]:
+    def __get_list(self) -> list[App]:
         if self.__apps_list is None:
             (iterator,) = self.__get_iter()
             self.__apps_list = list(iterator)
@@ -318,16 +187,16 @@ class Apps:
         with open(lock_path, "r") as f:
             lock_file: VersionLock = json.load(f)
 
-        apps: list[AppMeta] = []
+        apps: list[App] = []
         for lock_data in lock_file.values():
             if lock_data["status"] == "success":
-                apps.append(AppMeta(lock_data["env"], lock_data["org"], lock_data["app"], cache_dir))
+                apps.append(App(lock_data["env"], lock_data["org"], lock_data["app"], cache_dir))
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 
         return cls(apps, executor)
 
-    def where_meta(self, func: Callable[[AppMeta], bool]) -> Apps:
+    def where_meta(self, func: Callable[[App], bool]) -> Apps:
         (a,) = self.__get_iter()
         return Apps(filter(func, a), self.__executor)
 
@@ -341,7 +210,7 @@ class Apps:
         func = wrap_with_data(wrap_open_app(__func))
         return Apps(self.__executor.map(func, a), self.__executor)
 
-    def select_meta(self, __func: Callable[[AppMeta], dict[str, object]]) -> Apps:
+    def select_meta(self, __func: Callable[[App], dict[str, object]]) -> Apps:
         (a,) = self.__get_iter()
         func = wrap_with_data(__func)
         return Apps(map(func, a), self.__executor)
