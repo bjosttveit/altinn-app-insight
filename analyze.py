@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsRichComparison
+
 import asyncio
 import json
 import re
@@ -208,6 +213,11 @@ class Apps:
         func = Apps.wrap_with_data(Apps.wrap_open_app(__func))
         return Apps(self.__executor.map(func, a), self.__executor)
 
+    def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
+        (a,) = self.__get_iter()
+        func = Apps.wrap_open_app(__func)
+        return Apps(sorted(a, key=func, reverse=reverse), self.__executor)
+
 
 async def main():
     cache_dir = Path("./data")
@@ -235,11 +245,12 @@ async def main():
         #     )
         # )
 
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4").select(
-        #         lambda app: {**app.data, "Version": app.frontend_version}
-        #     )
-        # )
+        # Apps in prod not running latest in v4
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+            .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
+            .order_by(lambda app: (app.org, app.frontend_version, app.app))
+        )
 
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.frontend_version == "4" and app.backend_version == "8.0.0").select(
@@ -247,11 +258,11 @@ async def main():
         #     )
         # )
 
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.backend_version.major == 8).select(
-                lambda app: {"Frontend version": app.frontend_version, "Backend version": app.backend_version}
-            )[:10]
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.backend_version.major == 8)
+        #     .select(lambda app: {"Frontend version": app.frontend_version, "Backend version": app.backend_version})
+        #     .order_by(lambda app: (app.org, app.backend_version))
+        # )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
