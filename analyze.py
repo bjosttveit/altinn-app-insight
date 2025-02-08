@@ -147,7 +147,6 @@ T = TypeVar("T")
 class Apps:
     def __init__(self, apps: Iterable[App], executor: ThreadPoolExecutor):
         self.__apps = apps
-        self.__apps_list: list[App] | None = None
         self.__executor = executor
 
     def __repr__(self):
@@ -171,6 +170,8 @@ class Apps:
         tup = tee(self.__apps, n + 1)
         self.__apps = tup[0]
         return tup[1:]
+
+    __apps_list: list[App] | None = None
 
     def __get_list(self) -> list[App]:
         if self.__apps_list is None:
@@ -236,33 +237,46 @@ class Apps:
 async def main():
     cache_dir = Path("./data")
 
-    with Apps.init(cache_dir, max_open_files=100) as apps:
+    with Apps.init(cache_dir, max_open_files=3) as apps:
 
         start = time.time()
 
-        # data = apps.where_meta(lambda app: app.env == 'tt02').where_content(lambda app: app.frontend_version >= "4.0.0" and app.frontend_version != "4" and app.frontend_version.preview is None)
-        # apps_v4 = apps.where_meta(lambda app: app.env == 'prod').where_content(lambda app: app.frontend_version.major == 4 and app.frontend_version.preview is None)
-        # apps_locked = apps_v4.where_content(lambda app: app.frontend_version != "4")
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "tt02"
+        #         and app.frontend_version >= "4.0.0"
+        #         and app.frontend_version != "4"
+        #         and app.frontend_version.preview is None
+        #     ).select(lambda app: {"Version": app.frontend_version})
+        # )
+
+        # apps_v4 = apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version.preview is None)
+        # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
         # print(f"{apps_locked.length()} / {apps_v4.length()}")
 
         # print(
-        #     apps.where_content(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview)
-        #     .select_content(lambda app: {"Version": app.frontend_version})
+        #     apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
+        #         lambda app: {"Version": app.frontend_version}
+        #     )
+        # )
+
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4").select(
+        #         lambda app: {**app.data, "Version": app.frontend_version}
+        #     )
+        # )
+
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version == "4" and app.backend_version == "8.0.0").select(
+        #         lambda app: {"Frontend version": app.frontend_version, "Backend version": app.backend_version}
+        #     )
         # )
 
         print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4").select(
-                lambda app: {**app.data, "Version": app.frontend_version}
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.backend_version.major == 8).select(
+                lambda app: {"Frontend version": app.frontend_version, "Backend version": app.backend_version}
             )
         )
-
-        # print(data.length())
-        # data = (
-        #     apps.where_meta(lambda app: app.env == "prod")
-        #     .where_content(lambda app: app.frontend_version == "4" and app.backend_version == "8.0.0")
-        #     .select_content(lambda app: (app.frontend_version, app.backend_version))
-        # )
-        # print(list(data))
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
