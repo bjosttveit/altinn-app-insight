@@ -6,13 +6,14 @@ import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import total_ordering
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
 from typing import (Callable, Generic, Iterable, Iterator, Literal, Self,
-                    TypedDict, TypeVar)
+                    TypedDict, TypeVar, cast)
 
 from tabulate import tabulate
 
@@ -146,6 +147,22 @@ class Version(str):
     def exists(self):
         return self.__match is not None
 
+
+P = TypeVar('P')
+class Missing:
+    pass
+class PropertyAccessor(Generic[P]):
+    __value: P | Missing = Missing()
+
+    def __init__(self, read: Callable[[], P]):
+        self.read = read
+
+    @property
+    def value(self) -> P:
+        if self.__value is Missing:
+            self.__value = self.read()
+        return cast(P, self.__value) 
+
 class AppMeta():
     def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data = {}):
         self.env: Environment = env
@@ -158,7 +175,9 @@ class AppMeta():
         return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt='simple_grid')
 
     def with_data(self, data: dict[str, object]):
-        return AppMeta(self.env, self.org, self.app, self.__app_dir, data)
+        copy = deepcopy(self)
+        copy.data = data
+        return copy
 
     @property
     def key(self):
@@ -345,7 +364,6 @@ async def main():
         print(
             apps.where_meta(lambda app: app.env == "prod")
             .where(lambda app: app.frontend_version.major == 4 and app.frontend_version != "4")
-            .select_meta(lambda app: {**app.data, "File name": app.file_name})
             .select(lambda app: {**app.data, "Version": app.frontend_version})
         )
 
