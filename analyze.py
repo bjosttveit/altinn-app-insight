@@ -4,13 +4,13 @@ import asyncio
 import json
 import re
 import time
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
 from typing import Callable, Generic, Iterable, Iterator, Self, TypeVar, cast
+from zipfile import ZipFile
 
 from tabulate import tabulate
 
@@ -48,6 +48,8 @@ class App:
         return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt="simple_grid")
 
     def with_data(self, data: dict[str, object]) -> App:
+        if self.open:
+            raise Exception("Attempted to copy an `App` object while open for reading, this could cause weird issues!")
         copy = deepcopy(self)
         copy.data = data
         return copy
@@ -64,39 +66,55 @@ class App:
     def file_path(self):
         return self.__app_dir.joinpath(self.file_name)
 
-    def open(self) -> AppContent:
-        f = open(self.file_path, "rb")
-        return AppContent(self.env, self.org, self.app, self.__app_dir, self.data, f)
+    __file: BufferedReader | None = None
+    __zip_file: ZipFile | None = None
+    __files: list[str] | None = None
 
+    def __ensure_open(self):
+        if self.__zip_file is None:
+            self.__file = open(self.file_path, "rb")
+            self.__zip_file = ZipFile(self.__file)
+        if self.__files is None:
+            self.__files = self.__zip_file.namelist()
 
-class AppContent(App):
-    __frontend_version: Version | None = None
-    __backend_version: Version | None = None
+    @property
+    def content(self) -> ZipFile:
+        if not self.open:
+            raise Exception("Tried to access `App.content` without first opening the file using the `with` keyword")
+        self.__ensure_open()
+        return cast(ZipFile, self.__zip_file)
 
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data: dict[str, object], file: BufferedReader):
-        super().__init__(env, org, app, app_dir, data)
-        self.__file = file
-        self.__zip_file = zipfile.ZipFile(self.__file)
-        self.files = self.__zip_file.namelist()
-
-    def open(self) -> AppContent:
-        raise Exception("App is already open")
+    @property
+    def files(self) -> list[str]:
+        if not self.open:
+            raise Exception("Tried to access `App.files` without first opening the file using the `with` keyword")
+        if self.__files is None:
+            self.__ensure_open()
+        return cast(list[str], self.__files)
 
     def __enter__(self):
+        self.open = True
         return self
 
     def __exit__(self, type, value, traceback):
-        self.__zip_file.close()
-        self.__file.close()
+        self.open = False
+        if self.__zip_file is not None:
+            self.__zip_file.close()
+            self.__zip_file = None
+        if self.__file is not None:
+            self.__file.close()
+            self.__file = None
 
     def first_match(self, file_pattern: str, line_pattern: str) -> re.Match[str] | None:
         file_names = filter(lambda name: re.search(file_pattern, name) is not None, self.files)
         for name in file_names:
-            with self.__zip_file.open(name) as zf:
+            with self.content.open(name) as zf:
                 for line in zf.readlines():
                     match = re.search(line_pattern, line.decode())
                     if match is not None:
                         return match
+
+    __frontend_version: Version | None = None
 
     @property
     def frontend_version(self) -> Version:
@@ -108,6 +126,8 @@ class AppContent(App):
         )
         self.__frontend_version = Version(match.group(1)) if match is not None else Version(None)
         return self.__frontend_version
+
+    __backend_version: Version | None = None
 
     @property
     def backend_version(self) -> Version:
@@ -122,18 +142,6 @@ class AppContent(App):
 
 
 T = TypeVar("T")
-
-
-def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[App], T]:
-    def __func(app: App):
-        with app.open() as app_data:
-            return func(app_data)
-
-    return __func
-
-
-def wrap_with_data(func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
-    return lambda app: app.with_data(func(app))
 
 
 class Apps:
@@ -196,24 +204,33 @@ class Apps:
 
         return cls(apps, executor)
 
-    def where_meta(self, func: Callable[[App], bool]) -> Apps:
-        (a,) = self.__get_iter()
-        return Apps(filter(func, a), self.__executor)
+    # Uses a context manager to make sure any file operations are closed
+    # Does not open any files yet, this happens lazily only when needed
+    @staticmethod
+    def wrap_open_app(__func: Callable[[App], T]) -> Callable[[App], T]:
+        def func(app: App):
+            with app as open_app:
+                return __func(open_app)
 
-    def where(self, __func: Callable[[AppContent], bool]) -> Apps:
+        return func
+
+    # Creates a copy of the App instance with the data returned in the callback
+    @staticmethod
+    def wrap_with_data(__func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
+        def func(app: App):
+            return app.with_data(__func(app))
+
+        return func
+
+    def where(self, __func: Callable[[App], bool]) -> Apps:
         a, b = self.__get_iter(2)
-        func = wrap_open_app(__func)
+        func = Apps.wrap_open_app(__func)
         return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
 
-    def select(self, __func: Callable[[AppContent], dict[str, object]]) -> Apps:
+    def select(self, __func: Callable[[App], dict[str, object]]) -> Apps:
         (a,) = self.__get_iter()
-        func = wrap_with_data(wrap_open_app(__func))
+        func = Apps.wrap_with_data(Apps.wrap_open_app(__func))
         return Apps(self.__executor.map(func, a), self.__executor)
-
-    def select_meta(self, __func: Callable[[App], dict[str, object]]) -> Apps:
-        (a,) = self.__get_iter()
-        func = wrap_with_data(__func)
-        return Apps(map(func, a), self.__executor)
 
 
 async def main():
@@ -234,9 +251,9 @@ async def main():
         # )
 
         print(
-            apps.where_meta(lambda app: app.env == "prod")
-            .where(lambda app: app.frontend_version.major == 4 and app.frontend_version != "4")
-            .select(lambda app: {**app.data, "Version": app.frontend_version})
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4").select(
+                lambda app: {**app.data, "Version": app.frontend_version}
+            )
         )
 
         # print(data.length())
