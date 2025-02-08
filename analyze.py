@@ -12,8 +12,7 @@ from functools import total_ordering
 from io import BufferedReader
 from itertools import compress, tee
 from pathlib import Path
-from typing import (Callable, Generic, Iterable, Iterator, Literal, Self,
-                    TypedDict, TypeVar, cast)
+from typing import Callable, Generic, Iterable, Iterator, Literal, Self, TypedDict, TypeVar, cast
 
 from tabulate import tabulate
 
@@ -33,7 +32,9 @@ class LockData(TypedDict):
     status: Status
     dev_altinn_studio: bool
 
+
 VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
+
 
 class Version(str):
     def __init__(self, version_string: str | None):
@@ -106,7 +107,6 @@ class Version(str):
             if other.preview is None:
                 return False
 
-
         return False
 
     def __gt__(self, other_version):
@@ -140,7 +140,6 @@ class Version(str):
             if other.preview is None:
                 return True
 
-
         return False
 
     @property
@@ -148,9 +147,13 @@ class Version(str):
         return self.__match is not None
 
 
-P = TypeVar('P')
+P = TypeVar("P")
+
+
 class Missing:
     pass
+
+
 class PropertyAccessor(Generic[P]):
     __value: P | Missing = Missing()
 
@@ -161,10 +164,11 @@ class PropertyAccessor(Generic[P]):
     def value(self) -> P:
         if self.__value is Missing:
             self.__value = self.read()
-        return cast(P, self.__value) 
+        return cast(P, self.__value)
 
-class AppMeta():
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data = {}):
+
+class AppMeta:
+    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data={}):
         self.env: Environment = env
         self.org = org
         self.app = app
@@ -172,7 +176,7 @@ class AppMeta():
         self.data = data
 
     def __repr__(self):
-        return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt='simple_grid')
+        return tabulate([[self.env, self.org, self.app]], headers=["Env", "Org", "App"], tablefmt="simple_grid")
 
     def with_data(self, data: dict[str, object]):
         copy = deepcopy(self)
@@ -258,10 +262,12 @@ def wrap_open_app(func: Callable[[AppContent], T]) -> Callable[[AppMeta], T]:
 
     return __func
 
+
 def wrap_with_data(func: Callable[[AppMeta], dict[str, object]]) -> Callable[[AppMeta], AppMeta]:
     return lambda app: app.with_data(func(app))
 
-class Apps():
+
+class Apps:
     def __init__(self, apps: Iterable[AppMeta], executor: ThreadPoolExecutor):
         self.__apps = apps
         self.__apps_list: list[AppMeta] | None = None
@@ -274,11 +280,9 @@ class Apps():
 
         headers = ["Env", "Org", "App", *apps[0].data.keys()]
         data = [[app.env, app.org, app.app, *app.data.values()] for app in apps]
-        table = tabulate(data, headers=headers, tablefmt='simple_grid')
+        table = tabulate(data, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length()}"
-
-
 
     def __enter__(self):
         return self
@@ -350,12 +354,11 @@ async def main():
 
         start = time.time()
 
-
         # data = apps.where_meta(lambda app: app.env == 'tt02').where_content(lambda app: app.frontend_version >= "4.0.0" and app.frontend_version != "4" and app.frontend_version.preview is None)
         # apps_v4 = apps.where_meta(lambda app: app.env == 'prod').where_content(lambda app: app.frontend_version.major == 4 and app.frontend_version.preview is None)
         # apps_locked = apps_v4.where_content(lambda app: app.frontend_version != "4")
         # print(f"{apps_locked.length()} / {apps_v4.length()}")
-        
+
         # print(
         #     apps.where_content(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview)
         #     .select_content(lambda app: {"Version": app.frontend_version})
