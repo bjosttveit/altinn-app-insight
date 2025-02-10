@@ -331,19 +331,19 @@ async def main():
         #     .order_by(lambda app: (app.backend_version, app.frontend_version))
         # )
 
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-        #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
-        #     .aggregate(lambda apps: {"Count": len(apps)})
-        #     .order_by(lambda data: data["Count"], reverse=True)
-        # )
-
         print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+            .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
             .aggregate(lambda apps: {"Count": len(apps)})
             .order_by(lambda data: data["Count"], reverse=True)
         )
+
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+        #     .aggregate(lambda apps: {"Count": len(apps)})
+        #     .order_by(lambda data: data["Count"], reverse=True)
+        # )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
