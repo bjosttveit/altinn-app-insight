@@ -289,7 +289,7 @@ class Apps(Generic[G]):
 async def main():
     cache_dir = Path("./data")
 
-    with Apps.init(cache_dir, max_open_files=3) as apps:
+    with Apps.init(cache_dir, max_open_files=100) as apps:
 
         start = time.time()
 
@@ -306,11 +306,28 @@ async def main():
         # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
+        # Apps testing navigation feature
         # print(
         #     apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
         #         lambda app: {"Version": app.frontend_version}
         #     )
         # )
+
+        # Apps on different major versions frontend
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
+            .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
+            .aggregate(lambda apps: {"Count": len(apps)})
+            .order_by(lambda data: data["Frontend major version"])
+        )
+
+        # Apps on different major versions backend
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
+            .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
+            .aggregate(lambda apps: {"Count": len(apps)})
+            .order_by(lambda data: data["Backend major version"])
+        )
 
         # Apps in prod not running latest in v4
         # print(
@@ -319,25 +336,23 @@ async def main():
         #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
         # )
 
+        # Service owners with locked app frontend per version
         # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version == "4" and app.backend_version == "8.0.0").select(
-        #         lambda app: {"Frontend version": app.frontend_version, "Backend version": app.backend_version}
-        #     )
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
+        #     .aggregate(lambda apps: {"Count": len(apps)})
+        #     .order_by(lambda data: (data["Org"], data["Frontend version"]))
         # )
 
+        # Backend frontend pairs in v4/v8
         # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.backend_version.major == 8)
-        #     .select(lambda app: {"Version pair": (app.backend_version, app.frontend_version)})
-        #     .order_by(lambda app: (app.backend_version, app.frontend_version))
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+        #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
+        #     .aggregate(lambda apps: {"Count": len(apps)})
+        #     .order_by(lambda data: data["Count"], reverse=True)
         # )
 
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-            .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
-            .aggregate(lambda apps: {"Count": len(apps)})
-            .order_by(lambda data: data["Count"], reverse=True)
-        )
-
+        # Backend v8 version usage
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
         #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
