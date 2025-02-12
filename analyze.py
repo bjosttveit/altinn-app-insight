@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import cached_property
 from io import BufferedReader
-from itertools import compress, groupby, islice, tee
+from itertools import compress, groupby, islice, starmap, tee
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, TypeVar, cast
 from zipfile import ZipFile
@@ -25,7 +25,7 @@ from package import Environment, Version, VersionLock
 
 
 class App:
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data={}):
+    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data: dict[str, object] = {}):
         self.env: Environment = env
         self.org = org
         self.app = app
@@ -33,8 +33,8 @@ class App:
         self.data = data
 
     def __repr__(self):
-        headers = ["Env", "Org", "App", *self.data.keys()]
-        data = [[self.env, self.org, self.app, *self.data.values()]]
+        headers = ["Env", "Org", "App", *self.data_keys]
+        data = [[self.env, self.org, self.app, *self.data_values]]
         return tabulate(data, headers=headers, tablefmt="simple_grid")
 
     def with_data(self, data: dict[str, object]) -> App:
@@ -59,6 +59,34 @@ class App:
     __file: BufferedReader | None = None
     __zip_file: ZipFile | None = None
     __files: list[str] | None = None
+
+    T = TypeVar("T")
+
+    # Uses a context manager to make sure any file operations are closed
+    # Does not open any files yet, this happens lazily only when needed
+    @staticmethod
+    def wrap_open_app(__func: Callable[[App], T]) -> Callable[[App], T]:
+        def func(app: App):
+            with app as open_app:
+                return __func(open_app)
+
+        return func
+
+    @cached_property
+    def data_keys(self) -> list[str]:
+        return list(self.data.keys())
+
+    @cached_property
+    def data_values(self) -> list[object]:
+        return list(self.data.values())
+
+    # Creates a copy of the App instance with the data returned in the callback
+    @staticmethod
+    def wrap_with_data(__func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
+        def func(app: App):
+            return app.with_data(__func(app))
+
+        return func
 
     def __enter__(self):
         self.open = True
@@ -121,38 +149,17 @@ class App:
         return Version(match.group(3)) if match is not None else Version(None)
 
 
-class Grouping(TypedDict):
-    keys: dict[str, object]
-    values: dict[str, object]
-    apps: list[App]
-
-
-G = TypeVar("G")
-
-
-class Apps(Generic[G]):
-    def __init__(self, apps: Iterable[App], executor: ThreadPoolExecutor, grouping: list[Grouping] | None = None):
+class Apps:
+    def __init__(self, apps: Iterable[App], executor: ThreadPoolExecutor):
         self.__apps = apps
         self.__executor = executor
-        self.__grouping = grouping
 
     def __repr__(self):
-
-        if self.__grouping is not None:
-            if len(self.__grouping) == 0:
-                print("Count: 0")
-
-            headers = [*self.__grouping[0]["keys"].keys(), *self.__grouping[0]["values"].keys()]
-            data = [[*group["keys"].values(), *group["values"].values()] for group in self.__grouping]
-            table = tabulate(data, headers=headers, tablefmt="simple_grid")
-
-            return f"{table}\nCount: {len(self.__grouping)}"
-
         if self.length == 0:
             print("Count: 0")
 
-        headers = ["Env", "Org", "App", *self.list[0].data.keys()]
-        data = [[app.env, app.org, app.app, *app.data.values()] for app in self.list]
+        headers = ["Env", "Org", "App", *self.list[0].data_keys]
+        data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
         table = tabulate(data, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
@@ -187,7 +194,7 @@ class Apps(Generic[G]):
         return self.length
 
     @classmethod
-    def init(cls, cache_dir: Path, max_open_files=100) -> Apps[App]:
+    def init(cls, cache_dir: Path, max_open_files=100) -> Apps:
         lock_path = Path.joinpath(cache_dir, ".apps.lock.json")
         if not lock_path.exists():
             print("Failed to locate lock file")
@@ -203,87 +210,163 @@ class Apps(Generic[G]):
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 
-        return cast(Apps[App], cls(apps, executor))
+        return cls(apps, executor)
 
-    T = TypeVar("T")
-
-    # Uses a context manager to make sure any file operations are closed
-    # Does not open any files yet, this happens lazily only when needed
-    @staticmethod
-    def wrap_open_app(__func: Callable[[App], T]) -> Callable[[App], T]:
-        def func(app: App):
-            with app as open_app:
-                return __func(open_app)
-
-        return func
-
-    @staticmethod
-    def wrap_open_app_list(__func: Callable[[list[App]], T]) -> Callable[[list[App]], T]:
-        def func(__apps: list[App]):
-            with ExitStack() as stack:
-                apps = [stack.enter_context(app) for app in __apps]
-                return __func(apps)
-
-        return func
-
-    # Creates a copy of the App instance with the data returned in the callback
-    @staticmethod
-    def wrap_with_data(__func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
-        def func(app: App):
-            return app.with_data(__func(app))
-
-        return func
-
-    def where(self, __func: Callable[[App], bool]) -> Apps[G]:
+    def where(self, __func: Callable[[App], bool]) -> Apps:
         a, b = self.__get_iter(2)
-        func = Apps.wrap_open_app(__func)
+        func = App.wrap_open_app(__func)
         return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
 
-    def select(self, __func: Callable[[App], dict[str, object]]) -> Apps[G]:
+    def select(self, __func: Callable[[App], dict[str, object]]) -> Apps:
         (a,) = self.__get_iter()
-        func = Apps.wrap_with_data(Apps.wrap_open_app(__func))
+        func = App.wrap_with_data(App.wrap_open_app(__func))
         return Apps(self.__executor.map(func, a), self.__executor)
 
-    def order_by(self, __func: Callable[[G], SupportsRichComparison], reverse=False) -> Apps[G]:
+    def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
         (a,) = self.__get_iter()
-        # Order apps
-        if self.__grouping is None:
-            func = Apps.wrap_open_app(__func)  # type: ignore
-            return Apps(sorted(a, key=func, reverse=reverse), self.__executor)
+        func = App.wrap_open_app(__func)
+        return Apps(sorted(a, key=func, reverse=reverse), self.__executor)
 
-        # Order groupings
-        def group_func(group: Grouping):
-            data = {**group["keys"], **group["values"]}
-            return __func(data)  # type: ignore
-
-        new_grouping = sorted(self.__grouping, key=group_func, reverse=reverse)
-
-        return Apps(a, self.__executor, new_grouping)
-
-    def group_by(self, group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> Apps[dict[str, SupportsRichComparison]]:
-        (a,) = self.__get_iter(1)
+    def group_by(self, group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
+        (a,) = self.__get_iter()
 
         def key_func(app: App) -> tuple[tuple[str, object], ...]:
-            group = Apps.wrap_open_app(group_func)(app)
+            group = App.wrap_open_app(group_func)(app)
             return tuple(zip(group.keys(), group.values()))
 
         s = sorted(a, key=key_func)
         g = groupby(s, key=key_func)
-        grouping: list[Grouping] = [{"keys": dict(keys), "values": {}, "apps": list(group)} for keys, group in g]
-        return Apps(s, self.__executor, grouping)
 
-    def aggregate(self, __agg_func: Callable[[list[App]], dict[str, object]]) -> Apps[G]:
-        if self.__grouping is None:
-            raise Exception("Apps.group_by must be used before Apps.aggregate")
 
-        agg_func = Apps.wrap_open_app_list(__agg_func)
+        groups = starmap(lambda column_tuples, apps: Group(dict(column_tuples), list(apps)), g)
+        return GroupedApps(groups, self.__executor)
 
-        new_grouping: list[Grouping] = []
-        for group in self.__grouping:
-            new_grouping.append({"keys": group["keys"], "values": agg_func(group["apps"]), "apps": group["apps"]})
 
-        (a,) = self.__get_iter(1)
-        return Apps(a, self.__executor, new_grouping)
+class Group:
+    type Aggregators = dict[str, Callable[[Group], object]]
+
+    def __init__(self, groupings: dict[str, object], apps: Iterable[App], aggregators: Group.Aggregators = {}):
+        self.groupings = groupings
+        self.__apps = apps
+        self.aggregators = aggregators
+
+    def __repr__(self):
+        headers = [*self.group_keys, *self.data_keys]
+        data = [[*self.group_values, *self.data_values]]
+        return tabulate(data, headers=headers, tablefmt="simple_grid")
+
+    def with_aggregators(self, data: Group.Aggregators) -> Group:
+        (a,) = self.__get_iter()
+        return Group(self.groupings, a, data)
+
+    @staticmethod
+    def wrap_with_aggregators(aggregators:  Group.Aggregators) -> Callable[[Group], Group]:
+        def func(group: Group):
+            return group.with_aggregators(aggregators)
+        return func
+
+    def __get_iter(self, n: int = 1) -> tuple[Iterator[App], ...]:
+        tup = tee(self.__apps, n + 1)
+        self.__apps = tup[0]
+        return tup[1:]
+
+    @cached_property
+    def group_keys(self) -> list[str]:
+        return list(self.groupings.keys())
+
+    @cached_property
+    def group_values(self) -> list[object]:
+        return list(self.groupings.values())
+
+    @cached_property
+    def data(self) -> dict[str, object]:
+        return {name: value for name, value in zip(self.data_keys, self.data_values)}
+
+    @cached_property
+    def data_keys(self) -> list[str]:
+        return list(self.aggregators.keys())
+
+    @cached_property
+    def data_values(self) -> list[object]:
+        return [func(self) for func in self.aggregators.values()]
+
+    @cached_property
+    def list(self) -> list[App]:
+        (iterator,) = self.__get_iter()
+        return list(iterator)
+
+    @cached_property
+    def length(self):
+        return len(self.list)
+
+    def __getitem__(self, key):
+        (iterator,) = self.__get_iter()
+        if isinstance(key, slice):
+            return Group(self.groupings, islice(iterator, key.start, key.stop, key.step), self.aggregators)
+        return next(islice(iterator, key, None))
+
+    def __len__(self):
+        return self.length
+
+
+class GroupedApps:
+    def __init__(self, groups: Iterable[Group], executor: ThreadPoolExecutor):
+        self.__groups = groups
+        self.__executor = executor
+
+    def __repr__(self):
+        if self.length == 0:
+            print("Count: 0")
+
+        headers = [*self.list[0].group_keys, *self.list[0].data_keys]
+        data = [[*group.group_values, *group.data_values] for group in self.list]
+        table = tabulate(data, headers=headers, tablefmt="simple_grid")
+
+        return f"{table}\nCount: {self.length}"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.__executor.shutdown()
+
+    def __get_iter(self, n: int = 1) -> tuple[Iterator[Group], ...]:
+        tup = tee(self.__groups, n + 1)
+        self.__groups = tup[0]
+        return tup[1:]
+
+    @cached_property
+    def list(self) -> list[Group]:
+        (iterator,) = self.__get_iter()
+        return list(iterator)
+
+    @cached_property
+    def length(self):
+        return len(self.list)
+
+    def __getitem__(self, key):
+        (iterator,) = self.__get_iter()
+        if isinstance(key, slice):
+            return GroupedApps(islice(iterator, key.start, key.stop, key.step), self.__executor)
+        return next(islice(iterator, key, None))
+
+    def __len__(self):
+        return self.length
+
+    def where(self, __func: Callable[[App], bool]) -> GroupedApps:
+        raise NotImplemented
+        # a, b = self.__get_iter(2)
+        # func = Apps.wrap_open_app(__func)
+        # return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
+
+    def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
+        (a,) = self.__get_iter()
+        return GroupedApps(sorted(a, key=func, reverse=reverse), self.__executor)
+
+    def select(self, aggregators: Group.Aggregators) -> GroupedApps:
+        (a,) = self.__get_iter()
+        func = Group.wrap_with_aggregators(aggregators)
+        return GroupedApps(self.__executor.map(func, a), self.__executor)
 
 
 async def main():
@@ -307,58 +390,59 @@ async def main():
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
         # Apps testing navigation feature
-        # print(
-        #     apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
-        #         lambda app: {"Version": app.frontend_version}
-        #     )
-        # )
+        print(
+            apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
+                lambda app: {"Version": app.frontend_version}
+            )
+        )
 
         # Apps on different major versions frontend
         print(
             apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
             .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
-            .aggregate(lambda apps: {"Count": len(apps)})
-            .order_by(lambda data: data["Frontend major version"])
+            .select({"Count": lambda group: group.length})
+            .order_by(lambda group: (group.groupings["Frontend major version"],))
         )
 
         # Apps on different major versions backend
         print(
             apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
             .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
-            .aggregate(lambda apps: {"Count": len(apps)})
-            .order_by(lambda data: data["Backend major version"])
+            .select({"Count": lambda group: group.length})
+            .order_by(lambda group: (group.groupings["Backend major version"],))
         )
 
         # Apps in prod not running latest in v4
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-        #     .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
-        #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+            .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
+            .order_by(lambda app: (app.org, app.frontend_version, app.app))
+        )
 
         # Service owners with locked app frontend per version
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
-        #     .aggregate(lambda apps: {"Count": len(apps)})
-        #     .order_by(lambda data: (data["Org"], data["Frontend version"]))
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
+            .select({"Count": lambda group: group.length})
+            .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
+        )
 
         # Backend frontend pairs in v4/v8
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-        #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
-        #     .aggregate(lambda apps: {"Count": len(apps)})
-        #     .order_by(lambda data: data["Count"], reverse=True)
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+            .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
+            .order_by(lambda group: (group.length), reverse=True)
+            .select({"Count": lambda group: group.length})
+        )
 
         # Backend v8 version usage
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
-        #     .aggregate(lambda apps: {"Count": len(apps)})
-        #     .order_by(lambda data: data["Count"], reverse=True)
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+            .order_by(lambda group: (group.length), reverse=True)
+            .select({"Count": lambda group: group.length})
+        )
+
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
