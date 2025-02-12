@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from contextlib import ExitStack
-from typing import TYPE_CHECKING, Generic, TypedDict
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -390,34 +389,34 @@ async def main():
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
         # Apps testing navigation feature
-        print(
-            apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
-                lambda app: {"Version": app.frontend_version}
-            )
-        )
+        # print(
+        #     apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
+        #         lambda app: {"Version": app.frontend_version}
+        #     )
+        # )
 
         # Apps on different major versions frontend
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
-            .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
-            .select({"Count": lambda group: group.length})
-            .order_by(lambda group: (group.groupings["Frontend major version"],))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
+        #     .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
+        #     .select({"Count": lambda group: group.length})
+        #     .order_by(lambda group: (group.groupings["Frontend major version"],))
+        # )
 
         # Apps on different major versions backend
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
-            .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
-            .select({"Count": lambda group: group.length})
-            .order_by(lambda group: (group.groupings["Backend major version"],))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
+        #     .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
+        #     .select({"Count": lambda group: group.length})
+        #     .order_by(lambda group: (group.groupings["Backend major version"],))
+        # )
 
         # Apps in prod not running latest in v4
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-            .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
-            .order_by(lambda app: (app.org, app.frontend_version, app.app))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+        #     .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
+        #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
+        # )
 
         # Service owners with locked app frontend per version
         print(
@@ -428,20 +427,20 @@ async def main():
         )
 
         # Backend frontend pairs in v4/v8
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-            .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
-            .order_by(lambda group: (group.length), reverse=True)
-            .select({"Count": lambda group: group.length})
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+        #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
+        #     .order_by(lambda group: (group.length), reverse=True)
+        #     .select({"Count": lambda group: group.length})
+        # )
 
         # Backend v8 version usage
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
-            .order_by(lambda group: (group.length), reverse=True)
-            .select({"Count": lambda group: group.length})
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+        #     .order_by(lambda group: (group.length), reverse=True)
+        #     .select({"Count": lambda group: group.length})
+        # )
 
 
         print()
