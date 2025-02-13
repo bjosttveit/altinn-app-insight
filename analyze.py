@@ -20,7 +20,7 @@ from zipfile import ZipFile
 
 from tabulate import tabulate
 
-from package import Environment, Version, VersionLock
+from package import Environment, Version, VersionLock, lazy_sorted
 
 
 class App:
@@ -224,7 +224,7 @@ class Apps:
     def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
         (a,) = self.__get_iter()
         func = App.wrap_open_app(__func)
-        return Apps(sorted(a, key=func, reverse=reverse), self.__executor)
+        return Apps(lazy_sorted(a, key=func, reverse=reverse), self.__executor)
 
     def group_by(self, group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
         (a,) = self.__get_iter()
@@ -233,9 +233,8 @@ class Apps:
             group = App.wrap_open_app(group_func)(app)
             return tuple(zip(group.keys(), group.values()))
 
-        s = sorted(a, key=key_func)
+        s = lazy_sorted(a, key=key_func)
         g = groupby(s, key=key_func)
-
 
         groups = starmap(lambda column_tuples, apps: Group(dict(column_tuples), list(apps)), g)
         return GroupedApps(groups, self.__executor)
@@ -259,9 +258,10 @@ class Group:
         return Group(self.groupings, a, data)
 
     @staticmethod
-    def wrap_with_aggregators(aggregators:  Group.Aggregators) -> Callable[[Group], Group]:
+    def wrap_with_aggregators(aggregators: Group.Aggregators) -> Callable[[Group], Group]:
         def func(group: Group):
             return group.with_aggregators(aggregators)
+
         return func
 
     def __get_iter(self, n: int = 1) -> tuple[Iterator[App], ...]:
@@ -360,7 +360,7 @@ class GroupedApps:
 
     def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
         (a,) = self.__get_iter()
-        return GroupedApps(sorted(a, key=func, reverse=reverse), self.__executor)
+        return GroupedApps(lazy_sorted(a, key=func, reverse=reverse), self.__executor)
 
     def select(self, aggregators: Group.Aggregators) -> GroupedApps:
         (a,) = self.__get_iter()
@@ -375,14 +375,16 @@ async def main():
 
         start = time.time()
 
-        # print(
-        #     apps.where(
-        #         lambda app: app.env == "tt02"
-        #         and app.frontend_version >= "4.0.0"
-        #         and app.frontend_version != "4"
-        #         and app.frontend_version.preview is None
-        #     ).select(lambda app: {"Version": app.frontend_version})
-        # )
+        print(
+            apps.where(
+                lambda app: app.env == "prod"
+                and app.frontend_version >= "4.0.0"
+                and app.frontend_version != "4"
+                and app.frontend_version.preview is None
+            )
+            .select(lambda app: {"Version": app.frontend_version})
+            .order_by(lambda app: app.frontend_version)
+        )
 
         # apps_v4 = apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version.preview is None)
         # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
@@ -419,12 +421,12 @@ async def main():
         # )
 
         # Service owners with locked app frontend per version
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
-            .select({"Count": lambda group: group.length})
-            .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
+        #     .select({"Count": lambda group: group.length})
+        #     .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
+        # )
 
         # Backend frontend pairs in v4/v8
         # print(
@@ -441,7 +443,6 @@ async def main():
         #     .order_by(lambda group: (group.length), reverse=True)
         #     .select({"Count": lambda group: group.length})
         # )
-
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
