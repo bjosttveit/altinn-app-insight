@@ -11,7 +11,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from functools import cached_property
+from functools import cached_property, reduce
 from io import BufferedReader
 from itertools import compress, groupby, islice, starmap, tee
 from pathlib import Path
@@ -183,6 +183,15 @@ class Apps:
     def length(self):
         return len(self.list)
 
+    @cached_property
+    def is_empty(self) -> bool:
+        (t,) = self.__get_iter()
+        try:  # Test if iterator is empty
+            next(t)
+            return False
+        except StopIteration:
+            return True
+
     def __getitem__(self, key):
         (iterator,) = self.__get_iter()
         if isinstance(key, slice):
@@ -236,16 +245,20 @@ class Apps:
         s = lazy_sorted(a, key=key_func)
         g = groupby(s, key=key_func)
 
-        groups = starmap(lambda column_tuples, apps: Group(dict(column_tuples), list(apps)), g)
+        # Need to consume the entire apps iterator or else it gets lost, thereby the 'list(apps)'
+        groups = starmap(lambda column_tuples, apps: Group(dict(column_tuples), list(apps), self.__executor), g)
         return GroupedApps(groups, self.__executor)
 
 
 class Group:
     type Aggregators = dict[str, Callable[[Group], object]]
 
-    def __init__(self, groupings: dict[str, object], apps: Iterable[App], aggregators: Group.Aggregators = {}):
+    def __init__(
+        self, groupings: dict[str, object], apps: Iterable[App], executor: ThreadPoolExecutor, aggregators: Group.Aggregators = {}
+    ):
         self.groupings = groupings
         self.__apps = apps
+        self.__executor = executor
         self.aggregators = aggregators
 
     def __repr__(self):
@@ -255,7 +268,7 @@ class Group:
 
     def with_aggregators(self, data: Group.Aggregators) -> Group:
         (a,) = self.__get_iter()
-        return Group(self.groupings, a, data)
+        return Group(self.groupings, a, self.__executor, data)
 
     @staticmethod
     def wrap_with_aggregators(aggregators: Group.Aggregators) -> Callable[[Group], Group]:
@@ -298,14 +311,38 @@ class Group:
     def length(self):
         return len(self.list)
 
+    @cached_property
+    def is_empty(self) -> bool:
+        (t,) = self.__get_iter()
+        try:  # Test if iterator is empty
+            next(t)
+            return False
+        except StopIteration:
+            return True
+
     def __getitem__(self, key):
         (iterator,) = self.__get_iter()
         if isinstance(key, slice):
-            return Group(self.groupings, islice(iterator, key.start, key.stop, key.step), self.aggregators)
+            return Group(self.groupings, islice(iterator, key.start, key.stop, key.step), self.__executor, self.aggregators)
         return next(islice(iterator, key, None))
 
     def __len__(self):
         return self.length
+
+    def where(self, __func: Callable[[App], bool]) -> Group:
+        a, b = self.__get_iter(2)
+        func = App.wrap_open_app(__func)
+        return Group(self.groupings, compress(a, self.__executor.map(func, b)), self.__executor, self.aggregators)
+
+    T = TypeVar("T")
+
+    def map_reduce[T](self, __map_func: Callable[[App], T], reduce_func: Callable[[T, T], T]) -> T | None:
+        # Cannot call reduce on empty iterator
+        if self.is_empty:
+            return None
+        (a,) = self.__get_iter()
+        map_func = App.wrap_open_app(__map_func)
+        return reduce(reduce_func, self.__executor.map(map_func, a))
 
 
 class GroupedApps:
@@ -343,6 +380,15 @@ class GroupedApps:
     def length(self):
         return len(self.list)
 
+    @cached_property
+    def is_empty(self) -> bool:
+        (t,) = self.__get_iter()
+        try:  # Test if iterator is empty
+            next(t)
+            return False
+        except StopIteration:
+            return True
+
     def __getitem__(self, key):
         (iterator,) = self.__get_iter()
         if isinstance(key, slice):
@@ -352,17 +398,21 @@ class GroupedApps:
     def __len__(self):
         return self.length
 
-    def where(self, __func: Callable[[App], bool]) -> GroupedApps:
-        raise NotImplemented
-        # a, b = self.__get_iter(2)
-        # func = Apps.wrap_open_app(__func)
-        # return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
+    def apps_where(self, func: Callable[[App], bool]) -> GroupedApps:
+        (a,) = self.__get_iter()
+        g = self.__executor.map(lambda group: group.where(func), a)
+        (b,c) = tee(g)
+        return GroupedApps(compress(b, self.__executor.map(lambda group: not group.is_empty, c)), self.__executor)
+
+    def group_where(self, func: Callable[[Group], bool]) -> GroupedApps:
+        (a,b) = self.__get_iter(2)
+        return GroupedApps(compress(a, self.__executor.map(func, b)), self.__executor)
 
     def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
         (a,) = self.__get_iter()
         return GroupedApps(lazy_sorted(a, key=func, reverse=reverse), self.__executor)
 
-    def select(self, aggregators: Group.Aggregators) -> GroupedApps:
+    def group_select(self, aggregators: Group.Aggregators) -> GroupedApps:
         (a,) = self.__get_iter()
         func = Group.wrap_with_aggregators(aggregators)
         return GroupedApps(self.__executor.map(func, a), self.__executor)
@@ -375,16 +425,16 @@ async def main():
 
         start = time.time()
 
-        print(
-            apps.where(
-                lambda app: app.env == "prod"
-                and app.frontend_version >= "4.0.0"
-                and app.frontend_version != "4"
-                and app.frontend_version.preview is None
-            )
-            .select(lambda app: {"Version": app.frontend_version})
-            .order_by(lambda app: app.frontend_version)
-        )
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "prod"
+        #         and app.frontend_version >= "4.0.0"
+        #         and app.frontend_version != "4"
+        #         and app.frontend_version.preview is None
+        #     )
+        #     .select(lambda app: {"Version": app.frontend_version})
+        #     .order_by(lambda app: app.frontend_version)
+        # )
 
         # apps_v4 = apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version.preview is None)
         # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
@@ -420,12 +470,19 @@ async def main():
         #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
         # )
 
-        # Service owners with locked app frontend per version
+        # Service owners with locked app frontend per version (and some other random stuff)
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
         #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
-        #     .select({"Count": lambda group: group.length})
+        #     .group_select(
+        #         {
+        #             "Count": lambda group: group.length,
+        #             "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: max(a, b)),
+        #         }
+        #     )
+        #     .group_where(lambda group: group.length > 2)
         #     .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
+        #     .apps_where(lambda app: app.backend_version != "8.0.0")
         # )
 
         # Backend frontend pairs in v4/v8
@@ -437,12 +494,12 @@ async def main():
         # )
 
         # Backend v8 version usage
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
-        #     .order_by(lambda group: (group.length), reverse=True)
-        #     .select({"Count": lambda group: group.length})
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+            .order_by(lambda group: (group.length), reverse=True)
+            .group_select({"Count": lambda group: group.length})
+        )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
