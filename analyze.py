@@ -471,19 +471,19 @@ async def main():
         # )
 
         # Service owners with locked app frontend per version (and some other random stuff)
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
-        #     .group_select(
-        #         {
-        #             "Count": lambda group: group.length,
-        #             "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: max(a, b)),
-        #         }
-        #     )
-        #     .group_where(lambda group: group.length > 2)
-        #     .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
-        #     .apps_where(lambda app: app.backend_version != "8.0.0")
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
+            .group_select(
+                {
+                    "Count": lambda group: group.length,
+                    "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
+                }
+            )
+            .group_where(lambda group: group.length > 2)
+            .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
+            .apps_where(lambda app: app.backend_version != "8.0.0")
+        )
 
         # Backend frontend pairs in v4/v8
         # print(
@@ -494,12 +494,12 @@ async def main():
         # )
 
         # Backend v8 version usage
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
-            .order_by(lambda group: (group.length), reverse=True)
-            .group_select({"Count": lambda group: group.length})
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
+        #     .order_by(lambda group: (group.length), reverse=True)
+        #     .group_select({"Count": lambda group: group.length})
+        # )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
