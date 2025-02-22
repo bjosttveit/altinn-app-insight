@@ -148,11 +148,23 @@ class App:
 
 
 class Apps(IterController[App]):
-    def __init__(self, apps: IterContainer[App]):
+    def __init__(self, apps: IterContainer[App], groupings: dict[str, object] = {}, selector: dict[str, Callable[[Apps], object]] = {}):
         super().__init__(apps)
+        self.groupings = groupings
+        self.selector = selector
 
-    def instantiate_slice(self, iterable: IterContainer[App]):
-        return Apps(iterable)
+    def with_iterable(self, iterable: IterContainer[App]):
+        return Apps(iterable, self.groupings, self.selector)
+
+    def with_selector(self, data: dict[str, Callable[[Apps], object]]) -> Apps:
+        return Apps(self.i, self.groupings, data)
+
+    @staticmethod
+    def wrap_with_selector(selector: dict[str, Callable[[Apps], object]]) -> Callable[[Apps], Apps]:
+        def func(apps: Apps):
+            return apps.with_selector(selector)
+
+        return func
 
     def __repr__(self):
         if self.length == 0:
@@ -183,49 +195,6 @@ class Apps(IterController[App]):
 
         return cls(IterContainer(apps, executor))
 
-    def where(self, __func: Callable[[App], bool]) -> Apps:
-        func = App.wrap_open_app(__func)
-        return Apps(self.i.filter(func))
-
-    def select(self, __func: Callable[[App], dict[str, object]]) -> Apps:
-        func = App.wrap_with_data(App.wrap_open_app(__func))
-        return Apps(self.i.map(func))
-
-    def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
-        func = App.wrap_open_app(__func)
-        return Apps(self.i.sort(func, reverse))
-
-    def group_by(self, __group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
-        group_func = App.wrap_open_app(__group_func)
-        return GroupedApps(self.i.group_by(lambda app: tuple(group_func(app).items()), lambda columns, apps: Group(dict(columns), apps)))
-
-
-class Group(IterController[App]):
-    type Aggregators = dict[str, Callable[[Group], object]]
-
-    def __init__(self, groupings: dict[str, object], apps: IterContainer[App], aggregators: Group.Aggregators = {}):
-        super().__init__(apps)
-        self.groupings = groupings
-        self.aggregators = aggregators
-
-    def instantiate_slice(self, iterable):
-        return Group(self.groupings, iterable, self.aggregators)
-
-    def __repr__(self):
-        headers = [*self.group_keys, *self.data_keys]
-        data = [[*self.group_values, *self.data_values]]
-        return tabulate(data, headers=headers, tablefmt="simple_grid")
-
-    def with_aggregators(self, data: Group.Aggregators) -> Group:
-        return Group(self.groupings, self.i, data)
-
-    @staticmethod
-    def wrap_with_aggregators(aggregators: Group.Aggregators) -> Callable[[Group], Group]:
-        def func(group: Group):
-            return group.with_aggregators(aggregators)
-
-        return func
-
     @cached_property
     def group_keys(self) -> list[str]:
         return list(self.groupings.keys())
@@ -235,20 +204,29 @@ class Group(IterController[App]):
         return list(self.groupings.values())
 
     @cached_property
-    def data(self) -> dict[str, object]:
-        return {name: value for name, value in zip(self.data_keys, self.data_values)}
-
-    @cached_property
     def data_keys(self) -> list[str]:
-        return list(self.aggregators.keys())
+        return list(self.selector.keys())
 
     @cached_property
     def data_values(self) -> list[object]:
-        return [func(self) for func in self.aggregators.values()]
+        return [func(self) for func in self.selector.values()]
 
-    def where(self, __func: Callable[[App], bool]) -> Group:
+    def where(self, __func: Callable[[App], bool]) -> Apps:
         func = App.wrap_open_app(__func)
-        return Group(self.groupings, self.i.filter(func), self.aggregators)
+        return self.with_iterable(self.i.filter(func))
+
+    def select(self, selector: dict[str, Callable[[App], object]]) -> Apps:
+        func = App.wrap_with_data(App.wrap_open_app(lambda app: {key: func(app) for (key, func) in selector.items()}))
+        return self.with_iterable(self.i.map(func))
+
+    def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
+        func = App.wrap_open_app(__func)
+        return self.with_iterable(self.i.sort(func, reverse))
+
+    def group_by(self, grouper: dict[str, Callable[[App], SupportsRichComparison]]) -> GroupedApps:
+        key_func = App.wrap_open_app(lambda app: tuple([(key, func(app)) for (key, func) in grouper.items()]))
+        map_func = lambda columns, apps: Apps(apps, dict(columns), self.selector)
+        return GroupedApps(self.i.group_by(key_func, map_func))
 
     T = TypeVar("T")
 
@@ -257,11 +235,11 @@ class Group(IterController[App]):
         return self.i.map(map_func).reduce(reduce_func)
 
 
-class GroupedApps(IterController[Group]):
-    def __init__(self, groups: IterContainer[Group]):
+class GroupedApps(IterController[Apps]):
+    def __init__(self, groups: IterContainer[Apps]):
         super().__init__(groups)
 
-    def instantiate_slice(self, iterable):
+    def with_iterable(self, iterable):
         return GroupedApps(iterable)
 
     def __repr__(self):
@@ -274,18 +252,15 @@ class GroupedApps(IterController[Group]):
 
         return f"{table}\nCount: {self.length}"
 
-    def apps_where(self, func: Callable[[App], bool]) -> GroupedApps:
-        return GroupedApps(self.i.map(lambda group: group.where(func)).filter(lambda group: not group.is_empty))
+    def where(self, func: Callable[[Apps], bool]) -> GroupedApps:
+        return self.with_iterable(self.i.filter(func))
 
-    def group_where(self, func: Callable[[Group], bool]) -> GroupedApps:
-        return GroupedApps(self.i.filter(func))
+    def order_by(self, func: Callable[[Apps], SupportsRichComparison], reverse=False) -> GroupedApps:
+        return self.with_iterable(self.i.sort(func, reverse))
 
-    def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
-        return GroupedApps(self.i.sort(func, reverse))
-
-    def group_select(self, aggregators: Group.Aggregators) -> GroupedApps:
-        func = Group.wrap_with_aggregators(aggregators)
-        return GroupedApps(self.i.map(func))
+    def select(self, selector: dict[str, Callable[[Apps], object]]) -> GroupedApps:
+        func = Apps.wrap_with_selector(selector)
+        return self.with_iterable(self.i.map(func))
 
 
 async def main():
@@ -295,16 +270,16 @@ async def main():
 
         start = time.time()
 
-        # print(
-        #     apps.where(
-        #         lambda app: app.env == "prod"
-        #         and app.frontend_version >= "4.0.0"
-        #         and app.frontend_version != "4"
-        #         and app.frontend_version.preview is None
-        #     )
-        #     .select(lambda app: {"Version": app.frontend_version})
-        #     .order_by(lambda app: app.frontend_version)
-        # )
+        print(
+            apps.where(
+                lambda app: app.env == "prod"
+                and app.frontend_version >= "4.0.0"
+                and app.frontend_version != "4"
+                and app.frontend_version.preview is None
+            )
+            .select({"Version": lambda app: app.frontend_version})
+            .order_by(lambda app: app.frontend_version)
+        )
 
         # apps_v4 = apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version.preview is None)
         # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
@@ -313,33 +288,33 @@ async def main():
         # Apps testing navigation feature
 
         # Apps on different major versions frontend
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
-        #     .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
-        #     .group_select({"Count": lambda group: group.length})
-        #     .order_by(lambda group: (group.groupings["Frontend major version"],))
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
+            .group_by({"Frontend major version": lambda app: cast(int, app.frontend_version.major)})
+            .select({"Count": lambda group: group.length})
+            .order_by(lambda group: (group.groupings["Frontend major version"],))
+        )
 
         # Apps on different major versions backend
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
-        #     .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
-        #     .group_select({"Count": lambda group: group.length})
-        #     .order_by(lambda group: (group.groupings["Backend major version"],))
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
+            .group_by({"Backend major version": lambda app: cast(int, app.backend_version.major)})
+            .select({"Count": lambda group: group.length})
+            .order_by(lambda group: (group.groupings["Backend major version"],))
+        )
 
         # Apps in prod not running latest in v4
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-        #     .select(lambda app: {**app.data, "Frontend version": app.frontend_version})
-        #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+            .select({"Frontend version": lambda app: app.frontend_version})
+            .order_by(lambda app: (app.org, app.frontend_version, app.app))
+        )
 
         # Service owners with locked app frontend per version
         print(
             apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-            .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
-            .group_select(
+            .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Frontend version": lambda app: app.frontend_version})
+            .select(
                 {
                     "Count": lambda group: group.length,
                     "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
@@ -349,20 +324,20 @@ async def main():
         )
 
         # Backend frontend pairs in v4/v8
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-        #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
-        #     .order_by(lambda group: (group.length), reverse=True)
-        #     .group_select({"Count": lambda group: group.length})
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+            .group_by({"Backend version": lambda app: app.backend_version, "Frontend version": lambda app: app.frontend_version})
+            .order_by(lambda group: (group.length), reverse=True)
+            .select({"Count": lambda group: group.length})
+        )
 
         # Backend v8 version usage
-        # print(
-        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-        #     .group_by(lambda app: {"Env": app.env, "Org": app.org, "Backend version": app.backend_version})
-        #     .order_by(lambda group: (group.length), reverse=True)
-        #     .group_select({"Count": lambda group: group.length})
-        # )
+        print(
+            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+            .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Backend version": lambda app: app.backend_version})
+            .order_by(lambda group: (group.length), reverse=True)
+            .select({"Count": lambda group: group.length})
+        )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")

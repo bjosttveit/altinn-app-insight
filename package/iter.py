@@ -95,7 +95,7 @@ class IterController(ABC, Generic[T]):
         self.i = iterable
 
     @abstractmethod
-    def instantiate_slice(self, iterable: IterContainer[T]) -> Self: ...
+    def with_iterable(self, iterable: IterContainer[T]) -> Self: ...
 
     @property
     def list(self) -> list[T]:
@@ -115,7 +115,7 @@ class IterController(ABC, Generic[T]):
     def __getitem__(self, key: slice) -> Self: ...
     def __getitem__(self, key: int | slice):
         if isinstance(key, slice):
-            return self.instantiate_slice(self.i[key])
+            return self.with_iterable(self.i[key])
         return self.i[key]
 
     def __len__(self):
