@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Callable, overload
+from typing import TYPE_CHECKING, Callable, Self, overload
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -13,7 +14,7 @@ from typing import Generic, Iterable, Iterator, TypeVar
 T = TypeVar("T")
 
 
-class IterController(Generic[T]):
+class IterContainer(Generic[T]):
     def __init__(self, iterable: Iterable[T], executor: ThreadPoolExecutor):
         self.__iterable = iterable
         self.executor = executor
@@ -44,11 +45,11 @@ class IterController(Generic[T]):
     @overload
     def __getitem__(self, key: int) -> T: ...
     @overload
-    def __getitem__(self, key: slice) -> IterController[T]: ...
-    def __getitem__(self, key: int | slice) -> T | IterController[T]:
+    def __getitem__(self, key: slice) -> IterContainer[T]: ...
+    def __getitem__(self, key: int | slice) -> T | IterContainer[T]:
         (iterator,) = self.__get_iter()
         if isinstance(key, slice):
-            return IterController(islice(iterator, key.start, key.stop, key.step), self.executor)
+            return IterContainer(islice(iterator, key.start, key.stop, key.step), self.executor)
         return next(islice(iterator, key, None))
 
     def __len__(self):
@@ -62,17 +63,17 @@ class IterController(Generic[T]):
 
     R = TypeVar("R")
 
-    def map[R](self, func: Callable[[T], R]) -> IterController[R]:
+    def map[R](self, func: Callable[[T], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
-        return IterController(self.executor.map(func, a), self.executor)
+        return IterContainer(self.executor.map(func, a), self.executor)
 
-    def filter(self, func: Callable[[T], bool]) -> IterController[T]:
+    def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
         a, b = self.__get_iter(2)
-        return IterController(compress(a, self.executor.map(func, b)), self.executor)
+        return IterContainer(compress(a, self.executor.map(func, b)), self.executor)
 
-    def sort(self, func: Callable[[T], SupportsRichComparison], reverse=False) -> IterController[T]:
+    def sort(self, func: Callable[[T], SupportsRichComparison], reverse=False) -> IterContainer[T]:
         (a,) = self.__get_iter()
-        return IterController(self.__sorted(a, func, reverse), self.executor)
+        return IterContainer(self.__sorted(a, func, reverse), self.executor)
 
     def reduce(self, func: Callable[[T, T], T]) -> T | None:
         if self.is_empty:
@@ -82,8 +83,46 @@ class IterController(Generic[T]):
 
     K = TypeVar("K")
 
-    def group_by[K, R](self, key_func: Callable[[T], K], map_func: Callable[[K, IterController[T]], R]) -> IterController[R]:
+    def group_by[K, R](self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
         s = self.__sorted(a, key_func)  # type: ignore how can I define a generic type which "extends" SupportsRichComparison?
         g = groupby(s, key=key_func)  # This does not use the ThreadPoolExecutor, but the sort does and so the values should be cached?
-        return IterController(starmap(lambda k, l: map_func(k, IterController(list(l), self.executor)), g), self.executor)
+        return IterContainer(starmap(lambda k, l: map_func(k, IterContainer(list(l), self.executor)), g), self.executor)
+
+
+class IterController(ABC, Generic[T]):
+    def __init__(self, iterable: IterContainer[T]):
+        self.i = iterable
+
+    @abstractmethod
+    def instantiate_slice(self, iterable: IterContainer[T]) -> Self: ...
+
+    @property
+    def list(self) -> list[T]:
+        return self.i.list
+
+    @property
+    def length(self):
+        return self.i.length
+
+    @property
+    def is_empty(self):
+        return self.i.is_empty
+
+    @overload
+    def __getitem__(self, key: int) -> T: ...
+    @overload
+    def __getitem__(self, key: slice) -> Self: ...
+    def __getitem__(self, key: int | slice):
+        if isinstance(key, slice):
+            return self.instantiate_slice(self.i[key])
+        return self.i[key]
+
+    def __len__(self):
+        return self.length
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.i.executor.shutdown()

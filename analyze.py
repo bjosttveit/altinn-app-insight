@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -11,16 +11,15 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from functools import cached_property, reduce
+from functools import cached_property
 from io import BufferedReader
-from itertools import compress, groupby, islice, starmap, tee
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, TypeVar, cast
+from typing import Callable, TypeVar, cast
 from zipfile import ZipFile
 
 from tabulate import tabulate
 
-from package import Environment, IterController, Version, VersionLock
+from package import Environment, IterContainer, IterController, Version, VersionLock
 
 
 class App:
@@ -148,9 +147,12 @@ class App:
         return Version(match.group(3)) if match is not None else Version(None)
 
 
-class Apps:
-    def __init__(self, apps: IterController[App]):
-        self.__apps = apps
+class Apps(IterController[App]):
+    def __init__(self, apps: IterContainer[App]):
+        super().__init__(apps)
+
+    def instantiate_slice(self, iterable: IterContainer[App]):
+        return Apps(iterable)
 
     def __repr__(self):
         if self.length == 0:
@@ -161,32 +163,6 @@ class Apps:
         table = tabulate(data, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self.__apps.executor.shutdown()
-
-    @property
-    def list(self) -> list[App]:
-        return self.__apps.list
-
-    @property
-    def length(self):
-        return self.__apps.length
-
-    @overload
-    def __getitem__(self, key: int) -> App: ...
-    @overload
-    def __getitem__(self, key: slice) -> Apps: ...
-    def __getitem__(self, key: int | slice):
-        if isinstance(key, slice):
-            return Apps(self.__apps[key])
-        return self.__apps[key]
-
-    def __len__(self):
-        return self.length
 
     @classmethod
     def init(cls, cache_dir: Path, max_open_files=100) -> Apps:
@@ -205,34 +181,35 @@ class Apps:
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 
-        return cls(IterController(apps, executor))
+        return cls(IterContainer(apps, executor))
 
     def where(self, __func: Callable[[App], bool]) -> Apps:
         func = App.wrap_open_app(__func)
-        return Apps(self.__apps.filter(func))
+        return Apps(self.i.filter(func))
 
     def select(self, __func: Callable[[App], dict[str, object]]) -> Apps:
         func = App.wrap_with_data(App.wrap_open_app(__func))
-        return Apps(self.__apps.map(func))
+        return Apps(self.i.map(func))
 
     def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
         func = App.wrap_open_app(__func)
-        return Apps(self.__apps.sort(func, reverse))
+        return Apps(self.i.sort(func, reverse))
 
     def group_by(self, __group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
         group_func = App.wrap_open_app(__group_func)
-        return GroupedApps(
-            self.__apps.group_by(lambda app: tuple(group_func(app).items()), lambda columns, apps: Group(dict(columns), apps))
-        )
+        return GroupedApps(self.i.group_by(lambda app: tuple(group_func(app).items()), lambda columns, apps: Group(dict(columns), apps)))
 
 
-class Group:
+class Group(IterController[App]):
     type Aggregators = dict[str, Callable[[Group], object]]
 
-    def __init__(self, groupings: dict[str, object], apps: IterController[App], aggregators: Group.Aggregators = {}):
+    def __init__(self, groupings: dict[str, object], apps: IterContainer[App], aggregators: Group.Aggregators = {}):
+        super().__init__(apps)
         self.groupings = groupings
-        self.__apps = apps
         self.aggregators = aggregators
+
+    def instantiate_slice(self, iterable):
+        return Group(self.groupings, iterable, self.aggregators)
 
     def __repr__(self):
         headers = [*self.group_keys, *self.data_keys]
@@ -240,7 +217,7 @@ class Group:
         return tabulate(data, headers=headers, tablefmt="simple_grid")
 
     def with_aggregators(self, data: Group.Aggregators) -> Group:
-        return Group(self.groupings, self.__apps, data)
+        return Group(self.groupings, self.i, data)
 
     @staticmethod
     def wrap_with_aggregators(aggregators: Group.Aggregators) -> Callable[[Group], Group]:
@@ -269,44 +246,23 @@ class Group:
     def data_values(self) -> list[object]:
         return [func(self) for func in self.aggregators.values()]
 
-    @property
-    def list(self) -> list[App]:
-        return self.__apps.list
-
-    @property
-    def length(self):
-        return self.__apps.length
-
-    @property
-    def is_empty(self):
-        return self.__apps.is_empty
-
-    @overload
-    def __getitem__(self, key: int) -> App: ...
-    @overload
-    def __getitem__(self, key: slice) -> Apps: ...
-    def __getitem__(self, key: int | slice):
-        if isinstance(key, slice):
-            return Apps(self.__apps[key])
-        return self.__apps[key]
-
-    def __len__(self):
-        return self.length
-
     def where(self, __func: Callable[[App], bool]) -> Group:
         func = App.wrap_open_app(__func)
-        return Group(self.groupings, self.__apps.filter(func), self.aggregators)
+        return Group(self.groupings, self.i.filter(func), self.aggregators)
 
     T = TypeVar("T")
 
     def map_reduce[T](self, __map_func: Callable[[App], T], reduce_func: Callable[[T, T], T]) -> T | None:
         map_func = App.wrap_open_app(__map_func)
-        return self.__apps.map(map_func).reduce(reduce_func)
+        return self.i.map(map_func).reduce(reduce_func)
 
 
-class GroupedApps:
-    def __init__(self, groups: IterController[Group]):
-        self.__groups = groups
+class GroupedApps(IterController[Group]):
+    def __init__(self, groups: IterContainer[Group]):
+        super().__init__(groups)
+
+    def instantiate_slice(self, iterable):
+        return GroupedApps(iterable)
 
     def __repr__(self):
         if self.length == 0:
@@ -318,44 +274,18 @@ class GroupedApps:
 
         return f"{table}\nCount: {self.length}"
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self.__groups.executor.shutdown()
-
-    @property
-    def list(self) -> list[Group]:
-        return self.__groups.list
-
-    @property
-    def length(self):
-        return self.__groups.length
-
-    @overload
-    def __getitem__(self, key: int) -> Group: ...
-    @overload
-    def __getitem__(self, key: slice) -> GroupedApps: ...
-    def __getitem__(self, key: int | slice):
-        if isinstance(key, slice):
-            return GroupedApps(self.__groups[key])
-        return self.__groups[key]
-
-    def __len__(self):
-        return self.length
-
     def apps_where(self, func: Callable[[App], bool]) -> GroupedApps:
-        return GroupedApps(self.__groups.map(lambda group: group.where(func)).filter(lambda group: not group.is_empty))
+        return GroupedApps(self.i.map(lambda group: group.where(func)).filter(lambda group: not group.is_empty))
 
     def group_where(self, func: Callable[[Group], bool]) -> GroupedApps:
-        return GroupedApps(self.__groups.filter(func))
+        return GroupedApps(self.i.filter(func))
 
     def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
-        return GroupedApps(self.__groups.sort(func, reverse))
+        return GroupedApps(self.i.sort(func, reverse))
 
     def group_select(self, aggregators: Group.Aggregators) -> GroupedApps:
         func = Group.wrap_with_aggregators(aggregators)
-        return GroupedApps(self.__groups.map(func))
+        return GroupedApps(self.i.map(func))
 
 
 async def main():
