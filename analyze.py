@@ -291,16 +291,16 @@ async def main():
         print(
             apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
             .group_by({"Frontend major version": lambda app: cast(int, app.frontend_version.major)})
-            .select({"Count": lambda group: group.length})
-            .order_by(lambda group: (group.groupings["Frontend major version"],))
+            .select({"Count": lambda apps: apps.length})
+            .order_by(lambda apps: (apps.groupings["Frontend major version"],))
         )
 
         # Apps on different major versions backend
         print(
             apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
             .group_by({"Backend major version": lambda app: cast(int, app.backend_version.major)})
-            .select({"Count": lambda group: group.length})
-            .order_by(lambda group: (group.groupings["Backend major version"],))
+            .select({"Count": lambda apps: apps.length})
+            .order_by(lambda apps: (apps.groupings["Backend major version"],))
         )
 
         # Apps in prod not running latest in v4
@@ -316,27 +316,27 @@ async def main():
             .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Frontend version": lambda app: app.frontend_version})
             .select(
                 {
-                    "Count": lambda group: group.length,
-                    "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
+                    "Count": lambda apps: apps.length,
+                    "Name": lambda apps: apps.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
                 }
             )
-            .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
+            .order_by(lambda apps: (apps.groupings["Org"], apps.groupings["Frontend version"]))
         )
 
         # Backend frontend pairs in v4/v8
         print(
             apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
             .group_by({"Backend version": lambda app: app.backend_version, "Frontend version": lambda app: app.frontend_version})
-            .order_by(lambda group: (group.length), reverse=True)
-            .select({"Count": lambda group: group.length})
+            .order_by(lambda apps: (apps.length), reverse=True)
+            .select({"Count": lambda apps: apps.length})
         )
 
         # Backend v8 version usage
         print(
             apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
             .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Backend version": lambda app: app.backend_version})
-            .order_by(lambda group: (group.length), reverse=True)
-            .select({"Count": lambda group: group.length})
+            .order_by(lambda apps: (apps.length), reverse=True)
+            .select({"Count": lambda apps: apps.length})
         )
 
         print()
