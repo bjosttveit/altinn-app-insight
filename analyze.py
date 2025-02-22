@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -20,7 +20,7 @@ from zipfile import ZipFile
 
 from tabulate import tabulate
 
-from package import Environment, Version, VersionLock, lazy_sorted
+from package import Environment, IterController, Version, VersionLock
 
 
 class App:
@@ -149,13 +149,12 @@ class App:
 
 
 class Apps:
-    def __init__(self, apps: Iterable[App], executor: ThreadPoolExecutor):
+    def __init__(self, apps: IterController[App]):
         self.__apps = apps
-        self.__executor = executor
 
     def __repr__(self):
         if self.length == 0:
-            print("Count: 0")
+            return "Count: 0"
 
         headers = ["Env", "Org", "App", *self.list[0].data_keys]
         data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
@@ -167,36 +166,24 @@ class Apps:
         return self
 
     def __exit__(self, type, value, traceback):
-        self.__executor.shutdown()
+        self.__apps.executor.shutdown()
 
-    def __get_iter(self, n: int = 1) -> tuple[Iterator[App], ...]:
-        tup = tee(self.__apps, n + 1)
-        self.__apps = tup[0]
-        return tup[1:]
-
-    @cached_property
+    @property
     def list(self) -> list[App]:
-        (iterator,) = self.__get_iter()
-        return list(iterator)
+        return self.__apps.list
 
-    @cached_property
+    @property
     def length(self):
-        return len(self.list)
+        return self.__apps.length
 
-    @cached_property
-    def is_empty(self) -> bool:
-        (t,) = self.__get_iter()
-        try:  # Test if iterator is empty
-            next(t)
-            return False
-        except StopIteration:
-            return True
-
-    def __getitem__(self, key):
-        (iterator,) = self.__get_iter()
+    @overload
+    def __getitem__(self, key: int) -> App: ...
+    @overload
+    def __getitem__(self, key: slice) -> Apps: ...
+    def __getitem__(self, key: int | slice):
         if isinstance(key, slice):
-            return Apps(islice(iterator, key.start, key.stop, key.step), self.__executor)
-        return next(islice(iterator, key, None))
+            return Apps(self.__apps[key])
+        return self.__apps[key]
 
     def __len__(self):
         return self.length
@@ -218,47 +205,33 @@ class Apps:
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 
-        return cls(apps, executor)
+        return cls(IterController(apps, executor))
 
     def where(self, __func: Callable[[App], bool]) -> Apps:
-        a, b = self.__get_iter(2)
         func = App.wrap_open_app(__func)
-        return Apps(compress(a, self.__executor.map(func, b)), self.__executor)
+        return Apps(self.__apps.filter(func))
 
     def select(self, __func: Callable[[App], dict[str, object]]) -> Apps:
-        (a,) = self.__get_iter()
         func = App.wrap_with_data(App.wrap_open_app(__func))
-        return Apps(self.__executor.map(func, a), self.__executor)
+        return Apps(self.__apps.map(func))
 
     def order_by(self, __func: Callable[[App], SupportsRichComparison], reverse=False) -> Apps:
-        (a,) = self.__get_iter()
         func = App.wrap_open_app(__func)
-        return Apps(lazy_sorted(a, key=func, reverse=reverse), self.__executor)
+        return Apps(self.__apps.sort(func, reverse))
 
-    def group_by(self, group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
-        (a,) = self.__get_iter()
-
-        def key_func(app: App) -> tuple[tuple[str, object], ...]:
-            group = App.wrap_open_app(group_func)(app)
-            return tuple(zip(group.keys(), group.values()))
-
-        s = lazy_sorted(a, key=key_func)
-        g = groupby(s, key=key_func)
-
-        # Need to consume the entire apps iterator or else it gets lost, thereby the 'list(apps)'
-        groups = starmap(lambda column_tuples, apps: Group(dict(column_tuples), list(apps), self.__executor), g)
-        return GroupedApps(groups, self.__executor)
+    def group_by(self, __group_func: Callable[[App], dict[str, SupportsRichComparison]]) -> GroupedApps:
+        group_func = App.wrap_open_app(__group_func)
+        return GroupedApps(
+            self.__apps.group_by(lambda app: tuple(group_func(app).items()), lambda columns, apps: Group(dict(columns), apps))
+        )
 
 
 class Group:
     type Aggregators = dict[str, Callable[[Group], object]]
 
-    def __init__(
-        self, groupings: dict[str, object], apps: Iterable[App], executor: ThreadPoolExecutor, aggregators: Group.Aggregators = {}
-    ):
+    def __init__(self, groupings: dict[str, object], apps: IterController[App], aggregators: Group.Aggregators = {}):
         self.groupings = groupings
         self.__apps = apps
-        self.__executor = executor
         self.aggregators = aggregators
 
     def __repr__(self):
@@ -267,8 +240,7 @@ class Group:
         return tabulate(data, headers=headers, tablefmt="simple_grid")
 
     def with_aggregators(self, data: Group.Aggregators) -> Group:
-        (a,) = self.__get_iter()
-        return Group(self.groupings, a, self.__executor, data)
+        return Group(self.groupings, self.__apps, data)
 
     @staticmethod
     def wrap_with_aggregators(aggregators: Group.Aggregators) -> Callable[[Group], Group]:
@@ -276,11 +248,6 @@ class Group:
             return group.with_aggregators(aggregators)
 
         return func
-
-    def __get_iter(self, n: int = 1) -> tuple[Iterator[App], ...]:
-        tup = tee(self.__apps, n + 1)
-        self.__apps = tup[0]
-        return tup[1:]
 
     @cached_property
     def group_keys(self) -> list[str]:
@@ -302,57 +269,48 @@ class Group:
     def data_values(self) -> list[object]:
         return [func(self) for func in self.aggregators.values()]
 
-    @cached_property
+    @property
     def list(self) -> list[App]:
-        (iterator,) = self.__get_iter()
-        return list(iterator)
+        return self.__apps.list
 
-    @cached_property
+    @property
     def length(self):
-        return len(self.list)
+        return self.__apps.length
 
-    @cached_property
-    def is_empty(self) -> bool:
-        (t,) = self.__get_iter()
-        try:  # Test if iterator is empty
-            next(t)
-            return False
-        except StopIteration:
-            return True
+    @property
+    def is_empty(self):
+        return self.__apps.is_empty
 
-    def __getitem__(self, key):
-        (iterator,) = self.__get_iter()
+    @overload
+    def __getitem__(self, key: int) -> App: ...
+    @overload
+    def __getitem__(self, key: slice) -> Apps: ...
+    def __getitem__(self, key: int | slice):
         if isinstance(key, slice):
-            return Group(self.groupings, islice(iterator, key.start, key.stop, key.step), self.__executor, self.aggregators)
-        return next(islice(iterator, key, None))
+            return Apps(self.__apps[key])
+        return self.__apps[key]
 
     def __len__(self):
         return self.length
 
     def where(self, __func: Callable[[App], bool]) -> Group:
-        a, b = self.__get_iter(2)
         func = App.wrap_open_app(__func)
-        return Group(self.groupings, compress(a, self.__executor.map(func, b)), self.__executor, self.aggregators)
+        return Group(self.groupings, self.__apps.filter(func), self.aggregators)
 
     T = TypeVar("T")
 
     def map_reduce[T](self, __map_func: Callable[[App], T], reduce_func: Callable[[T, T], T]) -> T | None:
-        # Cannot call reduce on empty iterator
-        if self.is_empty:
-            return None
-        (a,) = self.__get_iter()
         map_func = App.wrap_open_app(__map_func)
-        return reduce(reduce_func, self.__executor.map(map_func, a))
+        return self.__apps.map(map_func).reduce(reduce_func)
 
 
 class GroupedApps:
-    def __init__(self, groups: Iterable[Group], executor: ThreadPoolExecutor):
+    def __init__(self, groups: IterController[Group]):
         self.__groups = groups
-        self.__executor = executor
 
     def __repr__(self):
         if self.length == 0:
-            print("Count: 0")
+            return "Count: 0"
 
         headers = [*self.list[0].group_keys, *self.list[0].data_keys]
         data = [[*group.group_values, *group.data_values] for group in self.list]
@@ -364,58 +322,40 @@ class GroupedApps:
         return self
 
     def __exit__(self, type, value, traceback):
-        self.__executor.shutdown()
+        self.__groups.executor.shutdown()
 
-    def __get_iter(self, n: int = 1) -> tuple[Iterator[Group], ...]:
-        tup = tee(self.__groups, n + 1)
-        self.__groups = tup[0]
-        return tup[1:]
-
-    @cached_property
+    @property
     def list(self) -> list[Group]:
-        (iterator,) = self.__get_iter()
-        return list(iterator)
+        return self.__groups.list
 
-    @cached_property
+    @property
     def length(self):
-        return len(self.list)
+        return self.__groups.length
 
-    @cached_property
-    def is_empty(self) -> bool:
-        (t,) = self.__get_iter()
-        try:  # Test if iterator is empty
-            next(t)
-            return False
-        except StopIteration:
-            return True
-
-    def __getitem__(self, key):
-        (iterator,) = self.__get_iter()
+    @overload
+    def __getitem__(self, key: int) -> Group: ...
+    @overload
+    def __getitem__(self, key: slice) -> GroupedApps: ...
+    def __getitem__(self, key: int | slice):
         if isinstance(key, slice):
-            return GroupedApps(islice(iterator, key.start, key.stop, key.step), self.__executor)
-        return next(islice(iterator, key, None))
+            return GroupedApps(self.__groups[key])
+        return self.__groups[key]
 
     def __len__(self):
         return self.length
 
     def apps_where(self, func: Callable[[App], bool]) -> GroupedApps:
-        (a,) = self.__get_iter()
-        g = self.__executor.map(lambda group: group.where(func), a)
-        (b,c) = tee(g)
-        return GroupedApps(compress(b, self.__executor.map(lambda group: not group.is_empty, c)), self.__executor)
+        return GroupedApps(self.__groups.map(lambda group: group.where(func)).filter(lambda group: not group.is_empty))
 
     def group_where(self, func: Callable[[Group], bool]) -> GroupedApps:
-        (a,b) = self.__get_iter(2)
-        return GroupedApps(compress(a, self.__executor.map(func, b)), self.__executor)
+        return GroupedApps(self.__groups.filter(func))
 
     def order_by(self, func: Callable[[Group], SupportsRichComparison], reverse=False) -> GroupedApps:
-        (a,) = self.__get_iter()
-        return GroupedApps(lazy_sorted(a, key=func, reverse=reverse), self.__executor)
+        return GroupedApps(self.__groups.sort(func, reverse))
 
     def group_select(self, aggregators: Group.Aggregators) -> GroupedApps:
-        (a,) = self.__get_iter()
         func = Group.wrap_with_aggregators(aggregators)
-        return GroupedApps(self.__executor.map(func, a), self.__executor)
+        return GroupedApps(self.__groups.map(func))
 
 
 async def main():
@@ -441,17 +381,12 @@ async def main():
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
         # Apps testing navigation feature
-        # print(
-        #     apps.where(lambda app: app.frontend_version.preview is not None and "navigation" in app.frontend_version.preview).select(
-        #         lambda app: {"Version": app.frontend_version}
-        #     )
-        # )
 
         # Apps on different major versions frontend
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
         #     .group_by(lambda app: {"Frontend major version": cast(int, app.frontend_version.major)})
-        #     .select({"Count": lambda group: group.length})
+        #     .group_select({"Count": lambda group: group.length})
         #     .order_by(lambda group: (group.groupings["Frontend major version"],))
         # )
 
@@ -459,7 +394,7 @@ async def main():
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
         #     .group_by(lambda app: {"Backend major version": cast(int, app.backend_version.major)})
-        #     .select({"Count": lambda group: group.length})
+        #     .group_select({"Count": lambda group: group.length})
         #     .order_by(lambda group: (group.groupings["Backend major version"],))
         # )
 
@@ -470,7 +405,7 @@ async def main():
         #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
         # )
 
-        # Service owners with locked app frontend per version (and some other random stuff)
+        # Service owners with locked app frontend per version
         print(
             apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
             .group_by(lambda app: {"Env": app.env, "Org": app.org, "Frontend version": app.frontend_version})
@@ -480,9 +415,7 @@ async def main():
                     "Name": lambda group: group.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
                 }
             )
-            .group_where(lambda group: group.length > 2)
             .order_by(lambda group: (group.groupings["Org"], group.groupings["Frontend version"]))
-            .apps_where(lambda app: app.backend_version != "8.0.0")
         )
 
         # Backend frontend pairs in v4/v8
@@ -490,7 +423,7 @@ async def main():
         #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
         #     .group_by(lambda app: {"Backend version": app.backend_version, "Frontend version": app.frontend_version})
         #     .order_by(lambda group: (group.length), reverse=True)
-        #     .select({"Count": lambda group: group.length})
+        #     .group_select({"Count": lambda group: group.length})
         # )
 
         # Backend v8 version usage
