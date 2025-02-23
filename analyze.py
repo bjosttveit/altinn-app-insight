@@ -30,18 +30,6 @@ class App:
         self.__app_dir = app_dir
         self.data = data
 
-    def __repr__(self):
-        headers = ["Env", "Org", "App", *self.data_keys]
-        data = [[self.env, self.org, self.app, *self.data_values]]
-        return tabulate(data, headers=headers, tablefmt="simple_grid")
-
-    def with_data(self, data: dict[str, object]) -> App:
-        if self.open:
-            raise Exception("Attempted to copy an `App` object while open for reading, this could cause weird issues!")
-        copy = deepcopy(self)
-        copy.data = data
-        return copy
-
     @property
     def key(self):
         return f"{self.env}-{self.org}-{self.app}"
@@ -54,9 +42,25 @@ class App:
     def file_path(self):
         return self.__app_dir.joinpath(self.file_name)
 
-    __file: BufferedReader | None = None
-    __zip_file: ZipFile | None = None
-    __files: list[str] | None = None
+    def __repr__(self):
+        headers = ["Env", "Org", "App", *self.data_keys]
+        data = [[self.env, self.org, self.app, *self.data_values]]
+        return tabulate(data, headers=headers, tablefmt="simple_grid")
+
+    def with_data(self, data: dict[str, object]) -> App:
+        if self.open:
+            raise Exception("Attempted to copy an `App` object while open for reading, this could cause weird issues!")
+        copy = deepcopy(self)
+        copy.data = data
+        return copy
+
+    @cached_property
+    def data_keys(self) -> list[str]:
+        return list(self.data.keys())
+
+    @cached_property
+    def data_values(self) -> list[object]:
+        return list(self.data.values())
 
     T = TypeVar("T")
 
@@ -70,14 +74,6 @@ class App:
 
         return func
 
-    @cached_property
-    def data_keys(self) -> list[str]:
-        return list(self.data.keys())
-
-    @cached_property
-    def data_values(self) -> list[object]:
-        return list(self.data.values())
-
     # Creates a copy of the App instance with the data returned in the callback
     @staticmethod
     def wrap_with_data(__func: Callable[[App], dict[str, object]]) -> Callable[[App], App]:
@@ -85,6 +81,10 @@ class App:
             return app.with_data(__func(app))
 
         return func
+
+    __file: BufferedReader | None = None
+    __zip_file: ZipFile | None = None
+    __files: list[str] | None = None
 
     def __enter__(self):
         self.open = True
