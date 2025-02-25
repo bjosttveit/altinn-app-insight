@@ -19,7 +19,8 @@ from zipfile import ZipFile
 
 from tabulate import tabulate
 
-from package import Environment, IterContainer, IterController, Version, VersionLock
+from package import (Environment, IterContainer, IterController, Version,
+                     VersionLock)
 
 
 class App:
@@ -286,6 +287,10 @@ async def main():
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
         # Apps testing navigation feature
+        print(
+            apps.where(lambda app: app.frontend_version.exists and ".navigation." in app.frontend_version)
+            .select({"Frontend version": lambda app: app.frontend_version})
+        )
 
         # Apps on different major versions frontend
         print(
