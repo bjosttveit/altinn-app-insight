@@ -21,6 +21,8 @@ class Keys(TypedDict):
 
 
 class Args:
+    key_path: str
+    cache_dir: str
     retry_failed: bool
 
 
@@ -238,7 +240,7 @@ class QueryClient:
 
 async def main(args: Args):
 
-    key_path = Path("./key.json")
+    key_path = Path(args.key_path)
     keys: Keys
     if key_path.exists():
         with open(key_path, "r") as f:
@@ -250,7 +252,7 @@ async def main(args: Args):
         print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'keys.json' file")
         exit(1)
 
-    cache_dir = Path("./data")
+    cache_dir = Path(args.cache_dir)
     os.makedirs(cache_dir, exist_ok=True)
 
     lock_path = Path.joinpath(cache_dir, ".apps.lock.json")
@@ -302,6 +304,16 @@ if __name__ == "__main__":
         help="Retry downloading apps that previously failed",
         action=argparse.BooleanOptionalAction,
         default=False,
+    )
+    parser.add_argument(
+        "--cache-dir",
+        help="Where to store downloaded apps",
+        default="./data",
+    )
+    parser.add_argument(
+        "--key-path",
+        help="Location of Altinn Studio key file",
+        default="./key.json",
     )
     args = parser.parse_args(namespace=Args())
     asyncio.run(main(args))

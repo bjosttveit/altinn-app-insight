@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from numpy.typing import ArrayLike
+
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
@@ -17,10 +19,12 @@ from pathlib import Path
 from typing import Callable, TypeVar, cast
 from zipfile import ZipFile
 
+import matplotlib.pyplot as plt
+from IPython.display import display_html
 from tabulate import tabulate
 
 from package import (Environment, IterContainer, IterController, Version,
-                     VersionLock)
+                     VersionLock, setup_plot)
 
 
 class App:
@@ -167,6 +171,16 @@ class Apps(IterController[App]):
 
         return func
 
+    def table(self):
+        if self.length == 0:
+            print("Count: 0")
+
+        headers = ["Env", "Org", "App", *self.list[0].data_keys]
+        data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
+        table = tabulate(data, headers=headers, tablefmt="html")
+        display_html(table)
+        print(f"Count: {self.length}")
+
     def __repr__(self):
         if self.length == 0:
             return "Count: 0"
@@ -212,6 +226,9 @@ class Apps(IterController[App]):
     def data_values(self) -> list[object]:
         return [func(self) for func in self.selector.values()]
 
+    def limit(self, limit: int) -> Apps:
+        return self[:limit]
+
     def where(self, __func: Callable[[App], bool]) -> Apps:
         func = App.wrap_open_app(__func)
         return self.with_iterable(self.i.filter(func))
@@ -243,6 +260,57 @@ class GroupedApps(IterController[Apps]):
     def with_iterable(self, iterable):
         return GroupedApps(iterable)
 
+    def __get_chart_labels(self, X: str | tuple[str] | None) -> list[str]:
+        if type(X) == str:
+            return (
+                [str(group.groupings[X]) for group in self.list]
+                if X in self.list[0].group_keys
+                else [str(group.data_values[group.data_keys.index(X)]) for group in self.list]
+            )
+        columns: list[tuple[str, ...]]
+        if type(X) == tuple:
+            columns = [
+                tuple(
+                    str(group.groupings[x]) if x in self.list[0].group_keys else str(group.data_values[group.data_keys.index(x)]) for x in X
+                )
+                for group in self.list
+            ]
+        else:
+            columns = [tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)]) for group in self.list]
+
+        return list(map(lambda column: ", ".join(column), columns))
+
+    def __get_chart_values(self, y: str | None) -> ArrayLike:
+        if y is None:
+            return [group.length for group in self.list]
+
+        return cast(ArrayLike, [group.groupings[y] for group in self.list] if y in self.list[0].group_keys else [group.data_values[group.data_keys.index(y)] for group in self.list])
+
+
+    def pie(self, title: str | None = None, x: str | tuple[str] | None = None, y: str | None = None):
+        labels = self.__get_chart_labels(x)
+        sizes = self.__get_chart_values(y)
+        fig, ax = setup_plot(title)
+        ax.pie(sizes, labels=labels)
+        fig.show()
+
+    def bar(self, title: str | None = None, x: str | tuple[str] | None = None, y: str | None = None):
+        labels = self.__get_chart_labels(x)
+        heights = self.__get_chart_values(y)
+        fig, ax = setup_plot(title)
+        ax.bar(labels, height=heights)
+        fig.show()
+
+    def table(self):
+        if self.length == 0:
+            print("Count: 0")
+
+        headers = [*self.list[0].group_keys, *self.list[0].data_keys]
+        data = [[*group.group_values, *group.data_values] for group in self.list]
+        table = tabulate(data, headers=headers, tablefmt="html")
+        display_html(table)
+        print(f"Count: {self.length}")
+
     def __repr__(self):
         if self.length == 0:
             return "Count: 0"
@@ -252,6 +320,9 @@ class GroupedApps(IterController[Apps]):
         table = tabulate(data, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
+
+    def limit(self, limit: int) -> GroupedApps:
+        return self[:limit]
 
     def where(self, func: Callable[[Apps], bool]) -> GroupedApps:
         return self.with_iterable(self.i.filter(func))
@@ -288,8 +359,9 @@ async def main():
 
         # Apps testing navigation feature
         print(
-            apps.where(lambda app: app.frontend_version.exists and ".navigation." in app.frontend_version)
-            .select({"Frontend version": lambda app: app.frontend_version})
+            apps.where(lambda app: app.frontend_version.exists and ".navigation." in app.frontend_version).select(
+                {"Frontend version": lambda app: app.frontend_version}
+            )
         )
 
         # Apps on different major versions frontend
