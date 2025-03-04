@@ -1,8 +1,7 @@
 import asyncio
 import json
 import time
-from concurrent.futures import (ALL_COMPLETED, ThreadPoolExecutor,
-                                as_completed, wait)
+from concurrent.futures import ALL_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict

@@ -19,12 +19,10 @@ from pathlib import Path
 from typing import Callable, TypeVar, cast
 from zipfile import ZipFile
 
-import matplotlib.pyplot as plt
 from IPython.display import display_html
 from tabulate import tabulate
 
-from package import (Environment, IterContainer, IterController, Version,
-                     VersionLock, setup_plot)
+from package import Component, Environment, IterContainer, IterController, Layout, Version, VersionLock, setup_plot
 
 
 class App:
@@ -89,7 +87,6 @@ class App:
 
     __file: BufferedReader | None = None
     __zip_file: ZipFile | None = None
-    __files: list[str] | None = None
 
     def __enter__(self):
         self.open = True
@@ -104,27 +101,38 @@ class App:
             self.__file.close()
             self.__file = None
 
-    def __ensure_open(self):
-        if self.__zip_file is None:
-            self.__file = open(self.file_path, "rb")
-            self.__zip_file = ZipFile(self.__file)
-        if self.__files is None:
-            self.__files = self.__zip_file.namelist()
-
     @property
     def content(self) -> ZipFile:
         if not self.open:
             raise Exception("Tried to access `App.content` without first opening the file using the `with` keyword")
-        self.__ensure_open()
-        return cast(ZipFile, self.__zip_file)
+        if self.__zip_file is None:
+            self.__file = open(self.file_path, "rb")
+            self.__zip_file = ZipFile(self.__file)
+        return self.__zip_file
+
+    @cached_property
+    def files(self) -> list[str]:
+        return self.content.namelist()
+
+    @cached_property
+    def layout_files(self) -> list[str]:
+        return list(filter(lambda name: re.search(r"/App/ui/(FormLayout\.json$|([^/]+/)?layouts/.+\.json$)", name), self.files))
+
+    def generate_layouts(self):
+        for layout_file in self.layout_files:
+            with self.content.open(layout_file) as zf:
+                layout_data = zf.read()
+            layout = Layout.from_bytes(layout_data)
+            if layout is not None:
+                yield layout
 
     @property
-    def files(self) -> list[str]:
-        if not self.open:
-            raise Exception("Tried to access `App.files` without first opening the file using the `with` keyword")
-        if self.__files is None:
-            self.__ensure_open()
-        return cast(list[str], self.__files)
+    def layouts(self) -> IterContainer[Layout]:
+        return IterContainer(layout for layout in self.generate_layouts())
+
+    @property
+    def components(self) -> IterContainer[Component]:
+        return IterContainer(component for layout in self.generate_layouts() for component in layout.components.list)
 
     def first_match(self, file_pattern: str, line_pattern: str) -> re.Match[str] | None:
         file_names = filter(lambda name: re.search(file_pattern, name) is not None, self.files)
@@ -276,7 +284,9 @@ class GroupedApps(IterController[Apps]):
                 for group in self.list
             ]
         else:
-            columns = [tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)]) for group in self.list]
+            columns = [
+                tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)]) for group in self.list
+            ]
 
         return list(map(lambda column: ", ".join(column), columns))
 
@@ -284,8 +294,14 @@ class GroupedApps(IterController[Apps]):
         if y is None:
             return [group.length for group in self.list]
 
-        return cast(ArrayLike, [group.groupings[y] for group in self.list] if y in self.list[0].group_keys else [group.data_values[group.data_keys.index(y)] for group in self.list])
-
+        return cast(
+            ArrayLike,
+            (
+                [group.groupings[y] for group in self.list]
+                if y in self.list[0].group_keys
+                else [group.data_values[group.data_keys.index(y)] for group in self.list]
+            ),
+        )
 
     def pie(self, title: str | None = None, x: str | tuple[str] | None = None, y: str | None = None):
         labels = self.__get_chart_labels(x)
@@ -342,79 +358,89 @@ async def main():
 
         start = time.time()
 
-        print(
-            apps.where(
-                lambda app: app.env == "prod"
-                and app.frontend_version >= "4.0.0"
-                and app.frontend_version != "4"
-                and app.frontend_version.preview is None
-            )
-            .select({"Version": lambda app: app.frontend_version})
-            .order_by(lambda app: app.frontend_version)
-        )
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "prod"
+        #         and app.frontend_version >= "4.0.0"
+        #         and app.frontend_version != "4"
+        #         and app.frontend_version.preview is None
+        #     )
+        #     .select({"Version": lambda app: app.frontend_version})
+        #     .order_by(lambda app: app.frontend_version)
+        # )
 
         # apps_v4 = apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version.preview is None)
         # apps_locked = apps_v4.where(lambda app: app.frontend_version != "4")
         # print(f"{apps_locked.length} / {apps_v4.length}")
 
         # Apps testing navigation feature
-        print(
-            apps.where(lambda app: app.frontend_version.exists and ".navigation." in app.frontend_version).select(
-                {"Frontend version": lambda app: app.frontend_version}
-            )
-        )
+        # print(apps.where(lambda app: ".navigation." in app.frontend_version).select({"Frontend version": lambda app: app.frontend_version}))
 
         # Apps on different major versions frontend
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
-            .group_by({"Frontend major version": lambda app: cast(int, app.frontend_version.major)})
-            .select({"Count": lambda apps: apps.length})
-            .order_by(lambda apps: (apps.groupings["Frontend major version"],))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.exists)
+        #     .group_by({"Frontend major version": lambda app: cast(int, app.frontend_version.major)})
+        #     .select({"Count": lambda apps: apps.length})
+        #     .order_by(lambda apps: (apps.groupings["Frontend major version"],))
+        # )
 
         # Apps on different major versions backend
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
-            .group_by({"Backend major version": lambda app: cast(int, app.backend_version.major)})
-            .select({"Count": lambda apps: apps.length})
-            .order_by(lambda apps: (apps.groupings["Backend major version"],))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
+        #     .group_by({"Backend major version": lambda app: cast(int, app.backend_version.major)})
+        #     .select({"Count": lambda apps: apps.length})
+        #     .order_by(lambda apps: (apps.groupings["Backend major version"],))
+        # )
 
         # Apps in prod not running latest in v4
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-            .select({"Frontend version": lambda app: app.frontend_version})
-            .order_by(lambda app: (app.org, app.frontend_version, app.app))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+        #     .select({"Frontend version": lambda app: app.frontend_version})
+        #     .order_by(lambda app: (app.org, app.frontend_version, app.app))
+        # )
 
         # Service owners with locked app frontend per version
-        print(
-            apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
-            .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Frontend version": lambda app: app.frontend_version})
-            .select(
-                {
-                    "Count": lambda apps: apps.length,
-                    "Name": lambda apps: apps.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
-                }
-            )
-            .order_by(lambda apps: (apps.groupings["Org"], apps.groupings["Frontend version"]))
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 4 and app.frontend_version != "4")
+        #     .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Frontend version": lambda app: app.frontend_version})
+        #     .select(
+        #         {
+        #             "Count": lambda apps: apps.length,
+        #             "Name": lambda apps: apps.map_reduce(lambda app: app.app, lambda a, b: min(a, b)),
+        #         }
+        #     )
+        #     .order_by(lambda apps: (apps.groupings["Org"], apps.groupings["Frontend version"]))
+        # )
 
         # Backend frontend pairs in v4/v8
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
-            .group_by({"Backend version": lambda app: app.backend_version, "Frontend version": lambda app: app.frontend_version})
-            .order_by(lambda apps: (apps.length), reverse=True)
-            .select({"Count": lambda apps: apps.length})
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version.major == 8 and app.frontend_version.major == 4)
+        #     .group_by({"Backend version": lambda app: app.backend_version, "Frontend version": lambda app: app.frontend_version})
+        #     .order_by(lambda apps: (apps.length), reverse=True)
+        #     .select({"Count": lambda apps: apps.length})
+        # )
 
         # Backend v8 version usage
-        print(
-            apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
-            .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Backend version": lambda app: app.backend_version})
-            .order_by(lambda apps: (apps.length), reverse=True)
-            .select({"Count": lambda apps: apps.length})
-        )
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
+        #     .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Backend version": lambda app: app.backend_version})
+        #     .order_by(lambda apps: (apps.length), reverse=True)
+        #     .select({"Count": lambda apps: apps.length})
+        # )
+
+        # Number of layout files
+        # print(
+        #     apps.where(lambda app: len(app.layout_files) > 0)
+        #     .select({"Number of layout files": lambda app: len(app.layout_files)})
+        #     .order_by(lambda app: len(app.layout_files), reverse=True)
+        # )
+
+        # Apps with Custom component
+        # print(
+        #     apps.where(lambda app: app.components.some(lambda component: component.type == "Custom"))
+        #     .select({"Custom components": lambda app: app.components.filter(lambda component: component.type == "Custom").length})
+        #     .order_by(lambda app: app.components.filter(lambda component: component.type == "Custom").length, reverse=True)
+        # )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")

@@ -15,9 +15,20 @@ T = TypeVar("T")
 
 
 class IterContainer(Generic[T]):
-    def __init__(self, iterable: Iterable[T], executor: ThreadPoolExecutor):
+    def __init__(self, iterable: Iterable[T], executor: ThreadPoolExecutor | None = None):
         self.__iterable = iterable
         self.executor = executor
+
+    def with_iterable[R](self, iterable: Iterable[R]) -> IterContainer[R]:
+        return IterContainer(iterable, self.executor)
+
+    P = TypeVar("P")
+    R = TypeVar("R")
+
+    def __map[P, R](self, func: Callable[[P], R], iterable: Iterable[P]) -> Iterable[R]:
+        if self.executor is not None:
+            return self.executor.map(func, iterable)
+        return map(func, iterable)
 
     def __get_iter(self, n: int = 1) -> tuple[Iterator[T], ...]:
         tup = tee(self.__iterable, n + 1)
@@ -58,22 +69,20 @@ class IterContainer(Generic[T]):
     def __sorted(self, i: Iterable[T], key: Callable[[T], SupportsRichComparison], reverse=False):
         """Key mapping uses ThreadPoolExecutor and sorting does not happen until generator starts being consumed"""
         k, v = tee(i)
-        for k, v in sorted(zip(self.executor.map(key, k), v), key=lambda k_v: k_v[0], reverse=reverse):
+        for k, v in sorted(zip(self.__map(key, k), v), key=lambda k_v: k_v[0], reverse=reverse):
             yield v
-
-    R = TypeVar("R")
 
     def map[R](self, func: Callable[[T], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
-        return IterContainer(self.executor.map(func, a), self.executor)
+        return self.with_iterable(self.__map(func, a))
 
     def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
         a, b = self.__get_iter(2)
-        return IterContainer(compress(a, self.executor.map(func, b)), self.executor)
+        return self.with_iterable(compress(a, self.__map(func, b)))
 
     def sort(self, func: Callable[[T], SupportsRichComparison], reverse=False) -> IterContainer[T]:
         (a,) = self.__get_iter()
-        return IterContainer(self.__sorted(a, func, reverse), self.executor)
+        return self.with_iterable(self.__sorted(a, func, reverse))
 
     def reduce(self, func: Callable[[T, T], T]) -> T | None:
         if self.is_empty:
@@ -81,13 +90,31 @@ class IterContainer(Generic[T]):
         (a,) = self.__get_iter()
         return reduce(func, a)
 
+    def some(self, func: Callable[[T], bool]) -> bool:
+        if self.is_empty:
+            return False
+        (a,) = self.__get_iter()
+        for v in a:
+            if func(v):
+                return True
+        return False
+
+    def every(self, func: Callable[[T], bool]) -> bool:
+        if self.is_empty:
+            return True
+        (a,) = self.__get_iter()
+        for v in a:
+            if not func(v):
+                return False
+        return True
+
     K = TypeVar("K")
 
     def group_by[K, R](self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
         s = self.__sorted(a, key_func)  # type: ignore how can I define a generic type which "extends" SupportsRichComparison?
         g = groupby(s, key=key_func)  # This does not use the ThreadPoolExecutor, but the sort does and so the values should be cached?
-        return IterContainer(starmap(lambda k, l: map_func(k, IterContainer(list(l), self.executor)), g), self.executor)
+        return self.with_iterable(starmap(lambda k, l: map_func(k, self.with_iterable(list(l))), g))
 
 
 class IterController(ABC, Generic[T]):
@@ -125,4 +152,5 @@ class IterController(ABC, Generic[T]):
         return self
 
     def __exit__(self, type, value, traceback):
-        self.i.executor.shutdown()
+        if self.i.executor is not None:
+            self.i.executor.shutdown()
