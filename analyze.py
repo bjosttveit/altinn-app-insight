@@ -22,7 +22,8 @@ from zipfile import ZipFile
 from IPython.display import display_html
 from tabulate import tabulate
 
-from package import Component, Environment, IterContainer, IterController, Layout, Version, VersionLock, setup_plot
+from package import (Component, Environment, GenericJson, IterContainer,
+                     IterController, Layout, Version, VersionLock, setup_plot)
 
 
 class App:
@@ -114,6 +115,20 @@ class App:
     def files(self) -> list[str]:
         return self.content.namelist()
 
+    def first_file(self, file_pattern):
+        file_names = list(filter(lambda name: re.search(file_pattern, name) is not None, self.files))
+        if len(file_names) > 0:
+            with self.content.open(file_names[0]) as zf:
+                return zf.read()
+
+    @cached_property
+    def application_metadata(self):
+        return GenericJson.from_bytes(self.first_file(r"/App/config/applicationmetadata.json$"))
+
+    @cached_property
+    def layout_sets(self):
+        return GenericJson.from_bytes(self.first_file(r"/App/ui/layout-sets.json$"))
+
     @cached_property
     def layout_files(self) -> list[str]:
         return list(filter(lambda name: re.search(r"/App/ui/(FormLayout\.json$|([^/]+/)?layouts/.+\.json$)", name), self.files))
@@ -123,18 +138,34 @@ class App:
             with self.content.open(layout_file) as zf:
                 layout_data = zf.read()
             layout = Layout.from_bytes(layout_data)
-            if layout is not None:
+            if layout.exists:
                 yield layout
 
     @property
     def layouts(self) -> IterContainer[Layout]:
-        return IterContainer(layout for layout in self.generate_layouts())
+        return IterContainer(self.generate_layouts())
 
     @property
     def components(self) -> IterContainer[Component]:
         return IterContainer(component for layout in self.generate_layouts() for component in layout.components.list)
 
-    def first_match(self, file_pattern: str, line_pattern: str) -> re.Match[str] | None:
+    @cached_property
+    def layout_settings_files(self) -> list[str]:
+        return list(filter(lambda name: re.search(r"/App/ui/([^/]+/)?Settings.json$", name), self.files))
+
+    def generate_layout_settings(self):
+        for layout_settings_file in self.layout_settings_files:
+            with self.content.open(layout_settings_file) as zf:
+                layout_settings_data = zf.read()
+            layout_settings = GenericJson.from_bytes(layout_settings_data)
+            if layout_settings.exists:
+                yield layout_settings
+
+    @property
+    def layout_settings(self) -> IterContainer[GenericJson]:
+        return IterContainer(self.generate_layout_settings())
+
+    def first_line_match(self, file_pattern: str, line_pattern: str) -> re.Match[str] | None:
         file_names = filter(lambda name: re.search(file_pattern, name) is not None, self.files)
         for name in file_names:
             with self.content.open(name) as zf:
@@ -145,7 +176,7 @@ class App:
 
     @cached_property
     def frontend_version(self) -> Version:
-        match = self.first_match(
+        match = self.first_line_match(
             r"/App/views/Home/Index.cshtml$",
             r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"',
         )
@@ -153,7 +184,7 @@ class App:
 
     @cached_property
     def backend_version(self) -> Version:
-        match = self.first_match(
+        match = self.first_line_match(
             r"/App/[^/]+.csproj$",
             r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"',
         )
@@ -456,6 +487,21 @@ async def main():
         #     )
         #     .order_by(lambda app: (app.data["Unique custom components"],), reverse=True)
         # )
+
+        # print(apps.where(lambda app: app.frontend_version.major == 2).select({"Frontend version": lambda app: app.frontend_version}))
+
+        # Stateless apps in prod
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.application_metadata.jq(".onEntry.show").first not in [None, 'select-instance', 'new-instance']).select(
+        #         {"On entry": lambda app: (app.application_metadata.jq(".onEntry.show").first)}
+        #     )
+        # )
+
+        # Apps using layout sets in v3 (prod)
+        # print(apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 3 and app.layout_sets.exists))
+
+        # Apps actually using navigation
+        print(apps.where(lambda app: app.layout_settings.some(lambda layout_settings: layout_settings.jq('.pages.groups').first is not None)))
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
