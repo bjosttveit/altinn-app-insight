@@ -79,3 +79,7 @@ class Layout:
     def can_be_hidden(self):
         hidden_prop = self.layout_json.get("hidden")
         return type(hidden_prop) == list or hidden_prop == True
+
+    def jq(self, query: str) -> IterContainer[object]:
+        iterable: Iterable[object] = iter(jq.compile(query).input_value(self.layout_json))
+        return IterContainer(iterable)
