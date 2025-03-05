@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict, TypeVar
+from typing import Iterable, NotRequired, TypedDict, TypeVar
 
+import jq
 import rapidjson
 
 from .iter import IterContainer
@@ -31,17 +32,21 @@ class Component:
         self.component_json = component_json
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self.component_json["id"]
 
     @property
-    def type(self):
+    def type(self) -> str:
         return self.component_json["type"]
 
     @property
-    def can_be_hidden(self):
+    def can_be_hidden(self) -> bool:
         hidden_prop = self.component_json.get("hidden")
         return type(hidden_prop) == list or hidden_prop == True
+
+    def jq(self, query: str) -> IterContainer[object]:
+        iterable: Iterable[object] = iter(jq.compile(query).input_value(self.component_json))
+        return IterContainer(iterable)
 
 
 class Layout:

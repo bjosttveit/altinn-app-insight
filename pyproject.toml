@@ -8,6 +8,7 @@ dependencies = [
     "aiofiles>=24.1.0",
     "httpx>=0.28.1",
     "ipympl>=0.9.6",
+    "jq>=1.8.0",
     "jupyterlab>=4.3.5",
     "matplotlib>=3.10.0",
     "python-rapidjson>=1.20",

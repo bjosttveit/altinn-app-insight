@@ -41,6 +41,14 @@ class IterContainer(Generic[T]):
         return list(iterator)
 
     @cached_property
+    def first(self) -> T | None:
+        (t,) = self.__get_iter()
+        try:
+            return next(t)
+        except StopIteration:
+            return None
+
+    @cached_property
     def length(self) -> int:
         return len(self.list)
 
@@ -71,6 +79,14 @@ class IterContainer(Generic[T]):
         k, v = tee(i)
         for k, v in sorted(zip(self.__map(key, k), v), key=lambda k_v: k_v[0], reverse=reverse):
             yield v
+
+    def __unique(self, i: Iterable[T], key: Callable[[T], object] | None):
+        k, v = tee(i)
+        seen = set()
+        for k, v in zip(self.__map(key, k) if key is not None else k, v):
+            if k not in seen:
+                seen.add(k)
+                yield v
 
     def map[R](self, func: Callable[[T], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
@@ -107,6 +123,10 @@ class IterContainer(Generic[T]):
             if not func(v):
                 return False
         return True
+
+    def unique(self, key: Callable[[T], object] | None = None) -> IterContainer[T]:
+        (a,) = self.__get_iter()
+        return self.with_iterable(self.__unique(a, key))
 
     K = TypeVar("K")
 

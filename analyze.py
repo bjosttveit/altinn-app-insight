@@ -442,6 +442,21 @@ async def main():
         #     .order_by(lambda app: app.components.filter(lambda component: component.type == "Custom").length, reverse=True)
         # )
 
+        # Unique custom components
+        # print(
+        #     apps.where(lambda app: app.components.some(lambda component: component.type == "Custom"))
+        #     .select(
+        #         {
+        #             "Unique custom components": lambda app: app.components.filter(lambda component: component.type == "Custom")
+        #             .map(lambda component: component.jq(".tagName").first)
+        #             .filter(lambda tagName: tagName is not None)
+        #             .unique()
+        #             .length
+        #         }
+        #     )
+        #     .order_by(lambda app: (app.data["Unique custom components"],), reverse=True)
+        # )
+
         print()
         print(f"Time: {time.time() - start:.2f}s")
 
