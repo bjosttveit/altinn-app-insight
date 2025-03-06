@@ -119,6 +119,9 @@ class QueryClient:
         try:
             res = await self.__fetch_json(deployments_url)
         except:
+            # TODO: Find out why this sometimes fails?
+            # When it fails, all apps are deleted
+            # Maybe handle failure more gracefully?
             print(f"Failed to fetch deployments for {cluster.key}")
             return
         print(f"Fetched deployments for {cluster.key}")
