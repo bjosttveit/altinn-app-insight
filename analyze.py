@@ -7,7 +7,6 @@ from numpy.typing import ArrayLike
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
-import asyncio
 import json
 import re
 import time
@@ -213,6 +212,7 @@ class Apps(IterController[App]):
     def table(self):
         if self.length == 0:
             print("Count: 0")
+            return
 
         headers = ["Env", "Org", "App", *self.list[0].data_keys]
         data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
@@ -351,6 +351,7 @@ class GroupedApps(IterController[Apps]):
     def table(self):
         if self.length == 0:
             print("Count: 0")
+            return
 
         headers = [*self.list[0].group_keys, *self.list[0].data_keys]
         data = [[*group.group_values, *group.data_values] for group in self.list]
@@ -382,7 +383,7 @@ class GroupedApps(IterController[Apps]):
         return self.with_iterable(self.i.map(func))
 
 
-async def main():
+def main():
     cache_dir = Path("./data")
 
     with Apps.init(cache_dir, max_open_files=100) as apps:
@@ -455,7 +456,7 @@ async def main():
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.backend_version == "8.0.0")
         #     .group_by({"Env": lambda app: app.env, "Org": lambda app: app.org, "Backend version": lambda app: app.backend_version})
-        #     .order_by(lambda apps: (apps.length), reverse=True)
+        #     .order_by(lambda apps: (apps.length, apps.groupings["Backend version"]), reverse=True)
         #     .select({"Count": lambda apps: apps.length})
         # )
 
@@ -492,8 +493,8 @@ async def main():
 
         # Stateless apps in prod
         # print(
-        #     apps.where(lambda app: app.env == "prod" and app.application_metadata.jq(".onEntry.show").first not in [None, 'select-instance', 'new-instance']).select(
-        #         {"On entry": lambda app: (app.application_metadata.jq(".onEntry.show").first)}
+        #     apps.where(lambda app: app.env == "prod" and app.application_metadata[".onEntry.show"] not in [None, 'select-instance', 'new-instance']).select(
+        #         {"On entry": lambda app: (app.application_metadata[".onEntry.show"])}
         #     )
         # )
 
@@ -501,11 +502,30 @@ async def main():
         # print(apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 3 and app.layout_sets.exists))
 
         # Apps actually using navigation
-        print(apps.where(lambda app: app.layout_settings.some(lambda layout_settings: layout_settings.jq('.pages.groups').first is not None)))
+        # print(
+        #     apps.where(lambda app: app.layout_settings.some(lambda layout_settings: layout_settings[".pages.groups"] is not None))
+        # )
+
+        # Stateless anonymous apps
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "prod"
+        #         and app.application_metadata[".onEntry.show"] not in [None, "select-instance", "new-instance"]
+        #         and app.application_metadata[".dataTypes.[].appLogic.allowAnonymousOnStateless", :].some(lambda value: value == True)
+        #     ).select(
+        #         {
+        #             "On entry": lambda app: (app.application_metadata[".onEntry.show"]),
+        #             "Anonymous dataType": lambda app: app.application_metadata[".dataTypes.[]", :]
+        #             .filter(lambda dataType: dataType[".appLogic.allowAnonymousOnStateless"] == True)
+        #             .map(lambda dataType: dataType[".id"])
+        #             .first,
+        #         }
+        #     )
+        # )
 
         print()
         print(f"Time: {time.time() - start:.2f}s")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

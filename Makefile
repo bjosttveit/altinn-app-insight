@@ -8,4 +8,5 @@ download-retry-failed:
 
 .PHONY: run
 run:
+	# uv run jupyter lab ./notebooks --config="./.jupyter/lab/user-settings"
 	uv run jupyter lab ./notebooks

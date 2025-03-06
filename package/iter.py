@@ -82,11 +82,17 @@ class IterContainer(Generic[T]):
 
     def __unique(self, i: Iterable[T], key: Callable[[T], object] | None):
         k, v = tee(i)
-        seen = set()
+        seenset = set()
+        seenlist = []
         for k, v in zip(self.__map(key, k) if key is not None else k, v):
-            if k not in seen:
-                seen.add(k)
-                yield v
+            try:
+                if k not in seenset:
+                    seenset.add(k)
+                    yield v
+            except TypeError:
+                if k not in seenlist:
+                    seenlist.append(k)
+                    yield v
 
     def map[R](self, func: Callable[[T], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()

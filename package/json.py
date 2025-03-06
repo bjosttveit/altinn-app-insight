@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Iterable, NotRequired, TypedDict, TypeGuard, TypeVar
+from typing import (Iterable, NotRequired, TypedDict, TypeGuard, TypeVar,
+                    overload)
 
 import jq
 import rapidjson
@@ -41,11 +42,31 @@ class GenericJson[J]:
     def from_bytes(data: bytes | None):
         return GenericJson(parse(data))
 
-    def jq(self, query: str) -> IterContainer[object]:
+    def __repr__(self):
+        return str(self.json)
+
+    def __eq__(self, other: object | GenericJson):
+        other_json = other.json if isinstance(other, GenericJson) else other
+        return self.json == other_json
+
+    def jq(self, query: str) -> IterContainer[GenericJson[object]]:
         if not self.exists:
             return IterContainer([])
         iterable: Iterable[object] = iter(jq.compile(query).input_value(self.json))
-        return IterContainer(iterable)
+        json_iterable = map(lambda json: GenericJson(json), iterable)
+        return IterContainer(json_iterable)
+
+    @overload
+    def __getitem__(self, key: str) -> GenericJson[object] | None: ...
+    @overload
+    def __getitem__(self, key: tuple[str, int]) -> GenericJson[object]: ...
+    @overload
+    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[GenericJson[object]]: ...
+    def __getitem__(self, key: str | tuple[str, int] | tuple[str, slice]):
+        if isinstance(key, str):
+            return self.jq(key).first
+        (query, slice_key) = key
+        return self.jq(query)[slice_key]
 
 
 class ComponentJson(TypedDict):
@@ -61,7 +82,7 @@ class LayoutDataJson(TypedDict):
     layout: list[ComponentJson]
 
 
-LayoutJson = TypedDict("LayoutJson", {"$schema": str, "data": LayoutDataJson})
+LayoutJson = TypedDict("LayoutJson", {"$schema": str | None, "data": LayoutDataJson})
 
 
 class Component(GenericJson[ComponentJson]):
