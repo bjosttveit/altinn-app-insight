@@ -49,6 +49,31 @@ class GenericJson[J]:
         other_json = other.json if isinstance(other, GenericJson) else other
         return self.json == other_json
 
+    def __gt__(self, other: object | GenericJson):
+        other_json = other.json if isinstance(other, GenericJson) else other
+        if not self.exists or other_json is None:
+            return False
+        return self.json > other_json # type: ignore
+
+    def __lt__(self, other: object | GenericJson):
+        other_json = other.json if isinstance(other, GenericJson) else other
+        if not self.exists or other_json is None:
+            return False
+        return self.json < other_json # type: ignore
+
+    def __gte__(self, other: object | GenericJson):
+        other_json = other.json if isinstance(other, GenericJson) else other
+        if not self.exists or other_json is None:
+            return False
+        return self.json >= other_json # type: ignore
+
+    def __lte__(self, other: object | GenericJson):
+        other_json = other.json if isinstance(other, GenericJson) else other
+        if not self.exists or other_json is None:
+            return False
+        return self.json <= other_json # type: ignore
+
+
     def jq(self, query: str) -> IterContainer[GenericJson[object]]:
         if not self.exists:
             return IterContainer([])

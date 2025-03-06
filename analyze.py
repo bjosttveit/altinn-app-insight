@@ -300,6 +300,9 @@ class GroupedApps(IterController[Apps]):
         return GroupedApps(iterable)
 
     def __get_chart_labels(self, X: str | tuple[str] | None) -> list[str]:
+        if self.length == 0:
+            return []
+
         if type(X) == str:
             return (
                 [str(group.groupings[X]) for group in self.list]
@@ -322,6 +325,9 @@ class GroupedApps(IterController[Apps]):
         return list(map(lambda column: ", ".join(column), columns))
 
     def __get_chart_values(self, y: str | None) -> ArrayLike:
+        if self.length == 0:
+            return []
+
         if y is None:
             return [group.length for group in self.list]
 
@@ -419,7 +425,7 @@ def main():
         # Apps on different major versions backend
         # print(
         #     apps.where(lambda app: app.env == "prod" and app.backend_version.exists)
-        #     .group_by({"Backend major version": lambda app: cast(int, app.backend_version.major)})
+        #     .group_by({"Backend major version": lambda app: app.backend_version.major})
         #     .select({"Count": lambda apps: apps.length})
         #     .order_by(lambda apps: (apps.groupings["Backend major version"],))
         # )
@@ -503,7 +509,7 @@ def main():
 
         # Apps actually using navigation
         # print(
-        #     apps.where(lambda app: app.layout_settings.some(lambda layout_settings: layout_settings[".pages.groups"] is not None))
+        #     apps.where(lambda app: app.layout_settings.some(lambda layout_settings: layout_settings[".pages.groups"] != None))
         # )
 
         # Stateless anonymous apps

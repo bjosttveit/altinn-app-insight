@@ -1,16 +1,61 @@
+from __future__ import annotations
+
 import re
 
 VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
+
+
+class NullableInt:
+    def __init__(self, value: int | str | None):
+        if isinstance(value, str):
+            self.value = int(value)
+        else:
+            self.value = value
+
+    @property
+    def exists(self):
+        return self.value is not None
+
+    def __repr__(self):
+        return str(self.value)
+
+    def __eq__(self, other):
+        other_value = other.value if isinstance(other, NullableInt) else other
+        return self.value == other_value
+
+    def __lt__(self, other):
+        other_value = other.value if isinstance(other, NullableInt) else other
+        if self.value is None or other_value is None:
+            return False
+        return self.value < other_value
+
+    def __gt__(self, other):
+        other_value = other.value if isinstance(other, NullableInt) else other
+        if self.value is None or other_value is None:
+            return False
+        return self.value > other_value
+
+    def __lte__(self, other):
+        other_value = other.value if isinstance(other, NullableInt) else other
+        if self.value is None or other_value is None:
+            return False
+        return self.value <= other_value
+
+    def __gte__(self, other):
+        other_value = other.value if isinstance(other, NullableInt) else other
+        if self.value is None or other_value is None:
+            return False
+        return self.value >= other_value
 
 
 class Version(str):
     def __init__(self, version_string: str | None):
         self.__version_string = version_string
         self.__match = re.match(VERSION_REGEX, version_string) if version_string is not None else None
-        self.major = int(self.__match.group(1)) if self.__match and self.__match.group(1) is not None else None
-        self.minor = int(self.__match.group(3)) if self.__match and self.__match.group(3) is not None else None
-        self.patch = int(self.__match.group(5)) if self.__match and self.__match.group(5) is not None else None
-        self.preview = self.__match.group(7) if self.__match and self.__match.group(7) is not None else None
+        self.major = NullableInt(self.__match.group(1) if self.__match else None)
+        self.minor = NullableInt(self.__match.group(3) if self.__match else None)
+        self.patch = NullableInt(self.__match.group(5) if self.__match else None)
+        self.preview = self.__match.group(7) if self.__match else None
 
     def __repr__(self):
         return self.__version_string if self.__version_string is not None else "None"
