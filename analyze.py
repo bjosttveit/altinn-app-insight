@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from numpy.typing import ArrayLike
 
@@ -21,8 +21,18 @@ from zipfile import ZipFile
 from IPython.display import display_html
 from tabulate import tabulate
 
-from package import (Component, Environment, GenericJson, IterContainer,
-                     IterController, Layout, Version, VersionLock, setup_plot)
+from package import (
+    Component,
+    Environment,
+    GenericJsonFile,
+    IterContainer,
+    IterController,
+    Layout,
+    TextFile,
+    Version,
+    VersionLock,
+    setup_plot,
+)
 
 
 class App:
@@ -118,15 +128,18 @@ class App:
         file_names = list(filter(lambda name: re.search(file_pattern, name) is not None, self.files))
         if len(file_names) > 0:
             with self.content.open(file_names[0]) as zf:
-                return zf.read()
+                return zf.read(), file_names[0]
+        return None, None
 
     @cached_property
     def application_metadata(self):
-        return GenericJson.from_bytes(self.first_file(r"/App/config/applicationmetadata.json$"))
+        file_data, file_path = self.first_file(r"/App/config/applicationmetadata.json$")
+        return GenericJsonFile.from_bytes(file_data, file_path)
 
     @cached_property
     def layout_sets(self):
-        return GenericJson.from_bytes(self.first_file(r"/App/ui/layout-sets.json$"))
+        file_data, file_path = self.first_file(r"/App/ui/layout-sets.json$")
+        return GenericJsonFile.from_bytes(file_data, file_path)
 
     @cached_property
     def layout_files(self) -> list[str]:
@@ -136,7 +149,7 @@ class App:
         for layout_file in self.layout_files:
             with self.content.open(layout_file) as zf:
                 layout_data = zf.read()
-            layout = Layout.from_bytes(layout_data)
+            layout = Layout.from_bytes(layout_data, layout_file)
             if layout.exists:
                 yield layout
 
@@ -148,46 +161,69 @@ class App:
     def components(self) -> IterContainer[Component]:
         return IterContainer(component for layout in self.generate_layouts() for component in layout.components.list)
 
+    def generate_json_files(self, files: Iterable[str]):
+        for file in files:
+            with self.content.open(file) as zf:
+                data = zf.read()
+            json_file = GenericJsonFile.from_bytes(data, file)
+            if json_file.exists:
+                yield json_file
+
     @cached_property
     def layout_settings_files(self) -> list[str]:
         return list(filter(lambda name: re.search(r"/App/ui/([^/]+/)?Settings.json$", name), self.files))
 
-    def generate_layout_settings(self):
-        for layout_settings_file in self.layout_settings_files:
-            with self.content.open(layout_settings_file) as zf:
-                layout_settings_data = zf.read()
-            layout_settings = GenericJson.from_bytes(layout_settings_data)
-            if layout_settings.exists:
-                yield layout_settings
+    @property
+    def layout_settings(self) -> IterContainer[GenericJsonFile]:
+        return IterContainer(self.generate_json_files(self.layout_settings_files))
+
+    def generate_text_files(self, files: Iterable[str]):
+        for file in files:
+            with self.content.open(file) as zf:
+                data = zf.read()
+            text_file = TextFile.from_bytes(data, file)
+            if text_file.exists:
+                yield text_file
+
+    @cached_property
+    def cs_files(self) -> list[str]:
+        return list(filter(lambda name: re.search(r"/App/.*\.cs$", name), self.files))
 
     @property
-    def layout_settings(self) -> IterContainer[GenericJson]:
-        return IterContainer(self.generate_layout_settings())
+    def cs(self) -> IterContainer[TextFile]:
+        return IterContainer(self.generate_text_files(self.cs_files))
 
-    def first_line_match(self, file_pattern: str, line_pattern: str) -> re.Match[str] | None:
+    @property
+    def program_cs(self):
+        file_data, file_path = self.first_file(r"/App/Program.cs$")
+        return TextFile.from_bytes(file_data, file_path)
+
+    def first_line_match(self, file_pattern: str, line_pattern: str, match_group: int | None) -> str | None:
         file_names = filter(lambda name: re.search(file_pattern, name) is not None, self.files)
         for name in file_names:
             with self.content.open(name) as zf:
                 for line in zf.readlines():
                     match = re.search(line_pattern, line.decode())
                     if match is not None:
-                        return match
+                        if match_group is not None:
+                            return match.group(match_group)
+                        return match.group(0)
 
     @cached_property
     def frontend_version(self) -> Version:
         match = self.first_line_match(
             r"/App/views/Home/Index.cshtml$",
             r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"',
+            1,
         )
-        return Version(match.group(1)) if match is not None else Version(None)
+        return Version(match)
 
     @cached_property
     def backend_version(self) -> Version:
         match = self.first_line_match(
-            r"/App/[^/]+.csproj$",
-            r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"',
+            r"/App/[^/]+.csproj$", r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3
         )
-        return Version(match.group(3)) if match is not None else Version(None)
+        return Version(match)
 
 
 class Apps(IterController[App]):
@@ -231,8 +267,8 @@ class Apps(IterController[App]):
         return f"{table}\nCount: {self.length}"
 
     @classmethod
-    def init(cls, cache_dir: Path, max_open_files=100) -> Apps:
-        lock_path = Path.joinpath(cache_dir, ".apps.lock.json")
+    def init(cls, apps_dir: Path, max_open_files=100) -> Apps:
+        lock_path = Path.joinpath(apps_dir, ".apps.lock.json")
         if not lock_path.exists():
             print("Failed to locate lock file")
             exit(1)
@@ -243,7 +279,7 @@ class Apps(IterController[App]):
         apps: list[App] = []
         for lock_data in lock_file.values():
             if lock_data["status"] == "success":
-                apps.append(App(lock_data["env"], lock_data["org"], lock_data["app"], cache_dir))
+                apps.append(App(lock_data["env"], lock_data["org"], lock_data["app"], apps_dir))
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 
@@ -390,9 +426,9 @@ class GroupedApps(IterController[Apps]):
 
 
 def main():
-    cache_dir = Path("./data")
+    apps_dir = Path("./data")
 
-    with Apps.init(cache_dir, max_open_files=100) as apps:
+    with Apps.init(apps_dir, max_open_files=100) as apps:
 
         start = time.time()
 
@@ -526,6 +562,13 @@ def main():
         #             .map(lambda dataType: dataType[".id"])
         #             .first,
         #         }
+        #     )
+        # )
+
+        # IFormDataValidators
+        # print(
+        #     apps.where(lambda app: app.program_cs[r"\.AddTransient<IFormDataValidator,"] != None).select(
+        #         {"Validators": lambda app: app.program_cs[r"\.AddTransient<IFormDataValidator,\s*([^>]+)>", 1, :]}
         #     )
         # )
 

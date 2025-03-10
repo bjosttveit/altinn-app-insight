@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Callable, Self, overload
@@ -18,6 +19,9 @@ class IterContainer(Generic[T]):
     def __init__(self, iterable: Iterable[T], executor: ThreadPoolExecutor | None = None):
         self.__iterable = iterable
         self.executor = executor
+
+    def __repr__(self):
+        return ", ".join(map(lambda i: str(i), self.list))
 
     def with_iterable[R](self, iterable: Iterable[R]) -> IterContainer[R]:
         return IterContainer(iterable, self.executor)
@@ -52,6 +56,10 @@ class IterContainer(Generic[T]):
     def length(self) -> int:
         return len(self.list)
 
+    @property
+    def is_not_empty(self) -> bool:
+        return not self.is_empty
+
     @cached_property
     def is_empty(self) -> bool:
         (t,) = self.__get_iter()
@@ -74,10 +82,11 @@ class IterContainer(Generic[T]):
     def __len__(self):
         return self.length
 
-    def __sorted(self, i: Iterable[T], key: Callable[[T], SupportsRichComparison], reverse=False):
+    def __sorted(self, i: Iterable[T], key: Callable[[T], SupportsRichComparison] | None = None, reverse=False):
         """Key mapping uses ThreadPoolExecutor and sorting does not happen until generator starts being consumed"""
+        func = key if key is not None else lambda t: t
         k, v = tee(i)
-        for k, v in sorted(zip(self.__map(key, k), v), key=lambda k_v: k_v[0], reverse=reverse):
+        for k, v in sorted(zip(self.__map(func, k), v), key=lambda k_v: k_v[0], reverse=reverse):
             yield v
 
     def __unique(self, i: Iterable[T], key: Callable[[T], object] | None):
@@ -98,11 +107,15 @@ class IterContainer(Generic[T]):
         (a,) = self.__get_iter()
         return self.with_iterable(self.__map(func, a))
 
+    def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R]]) -> IterContainer[R]:
+        (a,) = self.__get_iter()
+        return self.with_iterable((c for b in self.__map(func, a) for c in (b.__iterable if isinstance(b, IterContainer) else b)))
+
     def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
         a, b = self.__get_iter(2)
         return self.with_iterable(compress(a, self.__map(func, b)))
 
-    def sort(self, func: Callable[[T], SupportsRichComparison], reverse=False) -> IterContainer[T]:
+    def sort(self, func: Callable[[T], SupportsRichComparison] | None = None, reverse=False) -> IterContainer[T]:
         (a,) = self.__get_iter()
         return self.with_iterable(self.__sorted(a, func, reverse))
 

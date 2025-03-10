@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import (Iterable, NotRequired, TypedDict, TypeGuard, TypeVar,
-                    overload)
+from typing import Iterable, NotRequired, TypedDict, TypeVar, overload
 
 import jq
 import rapidjson
@@ -38,10 +37,6 @@ class GenericJson[J]:
     def exists(self):
         return self.json is not None
 
-    @staticmethod
-    def from_bytes(data: bytes | None):
-        return GenericJson(parse(data))
-
     def __repr__(self):
         return str(self.json)
 
@@ -53,26 +48,25 @@ class GenericJson[J]:
         other_json = other.json if isinstance(other, GenericJson) else other
         if not self.exists or other_json is None:
             return False
-        return self.json > other_json # type: ignore
+        return self.json > other_json  # type: ignore
 
     def __lt__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other
         if not self.exists or other_json is None:
             return False
-        return self.json < other_json # type: ignore
+        return self.json < other_json  # type: ignore
 
     def __gte__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other
         if not self.exists or other_json is None:
             return False
-        return self.json >= other_json # type: ignore
+        return self.json >= other_json  # type: ignore
 
     def __lte__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other
         if not self.exists or other_json is None:
             return False
-        return self.json <= other_json # type: ignore
-
+        return self.json <= other_json  # type: ignore
 
     def jq(self, query: str) -> IterContainer[GenericJson[object]]:
         if not self.exists:
@@ -94,6 +88,20 @@ class GenericJson[J]:
         return self.jq(query)[slice_key]
 
 
+class GenericJsonFile(GenericJson[J]):
+    def __init__(self, json: J | None, file_path: str | None):
+        super().__init__(json)
+        self.file_path = file_path
+
+    @staticmethod
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return GenericJsonFile(parse(data), file_path)
+
+    @property
+    def schema(self):
+        return self[".$schema"]
+
+
 class ComponentJson(TypedDict):
     """Can have additional properties"""
 
@@ -107,16 +115,14 @@ class LayoutDataJson(TypedDict):
     layout: list[ComponentJson]
 
 
-LayoutJson = TypedDict("LayoutJson", {"$schema": str | None, "data": LayoutDataJson})
+class LayoutJson(TypedDict):
+    data: LayoutDataJson
 
 
 class Component(GenericJson[ComponentJson]):
-    def __init__(self, json: ComponentJson | None):
+    def __init__(self, json: ComponentJson | None, layout: Layout):
         super().__init__(json)
-
-    @staticmethod
-    def from_bytes(data: bytes | None):
-        return Component(parse(data))
+        self.layout = layout
 
     @property
     def id(self):
@@ -130,34 +136,14 @@ class Component(GenericJson[ComponentJson]):
             return None
         return self.json["type"]
 
-    @property
-    def can_be_hidden(self):
-        if self.json is None:
-            return None
-        hidden_prop = self.json.get("hidden")
-        return type(hidden_prop) == list or hidden_prop == True
 
-
-class Layout(GenericJson[LayoutJson]):
-    def __init__(self, json: LayoutJson | None):
-        super().__init__(json)
+class Layout(GenericJsonFile[LayoutJson]):
+    def __init__(self, json: LayoutJson | None, file_path: str | None):
+        super().__init__(json, file_path)
         self.components = IterContainer(
-            map(lambda component_json: Component(component_json), json["data"]["layout"] if json is not None else [])
+            map(lambda component_json: Component(component_json, self), json["data"]["layout"] if json is not None else [])
         )
 
     @staticmethod
-    def from_bytes(data: bytes | None):
-        return Layout(parse(data))
-
-    @property
-    def schema(self):
-        if self.json is None:
-            return None
-        return self.json["$schema"]
-
-    @property
-    def can_be_hidden(self) -> bool | None:
-        if self.json is None:
-            return None
-        hidden_prop = self.json.get("hidden")
-        return type(hidden_prop) == list or hidden_prop == True
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return Layout(parse(data), file_path)
