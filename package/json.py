@@ -94,6 +94,10 @@ class GenericJsonFile(GenericJson[J]):
         self.file_path = file_path
 
     @staticmethod
+    def empty():
+        return GenericJsonFile(None, None)
+
+    @staticmethod
     def from_bytes(data: bytes | None, file_path: str | None):
         return GenericJsonFile(parse(data), file_path)
 

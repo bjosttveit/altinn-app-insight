@@ -126,106 +126,75 @@ class App:
     def files(self) -> list[str]:
         return self.content.namelist()
 
-    def first_file(self, file_pattern):
-        file_names = list(filter(lambda name: re.search(file_pattern, name) is not None, self.files))
-        if len(file_names) > 0:
-            with self.content.open(file_names[0]) as zf:
-                return zf.read(), file_names[0]
-        return None, None
+    def files_matching(self, file_pattern: str):
+        def read(path: str):
+            with self.content.open(path) as zf:
+                return zf.read()
+
+        return IterContainer(self.files).filter(lambda path: re.search(file_pattern, path) is not None).map(lambda path: (read(path), path))
 
     @cached_property
     def application_metadata(self):
-        file_data, file_path = self.first_file(r"/App/config/applicationmetadata.json$")
-        return GenericJsonFile.from_bytes(file_data, file_path)
+        return (
+            self.files_matching(r"/App/config/applicationmetadata.json$")
+            .map(lambda args: GenericJsonFile.from_bytes(*args))
+            .first_or_default(GenericJsonFile.empty())
+        )
 
     @cached_property
     def layout_sets(self):
-        file_data, file_path = self.first_file(r"/App/ui/layout-sets.json$")
-        return GenericJsonFile.from_bytes(file_data, file_path)
-
-    @cached_property
-    def layout_files(self) -> list[str]:
-        return list(filter(lambda name: re.search(r"/App/ui/(FormLayout\.json$|([^/]+/)?layouts/.+\.json$)", name), self.files))
-
-    def generate_layouts(self):
-        for layout_file in self.layout_files:
-            with self.content.open(layout_file) as zf:
-                layout_data = zf.read()
-            layout = Layout.from_bytes(layout_data, layout_file)
-            if layout.exists:
-                yield layout
+        return (
+            self.files_matching(r"/App/ui/layout-sets.json$")
+            .map(lambda args: GenericJsonFile.from_bytes(*args))
+            .first_or_default(GenericJsonFile.empty())
+        )
 
     @property
     def layouts(self) -> IterContainer[Layout]:
-        return IterContainer(self.generate_layouts())
+        return (
+            self.files_matching(r"/App/ui/(FormLayout\.json$|([^/]+/)?layouts/.+\.json$)")
+            .map(lambda args: Layout.from_bytes(*args))
+            .filter(lambda layout: layout.exists)
+        )
 
     @property
     def components(self) -> IterContainer[Component]:
-        return IterContainer(component for layout in self.generate_layouts() for component in layout.components.list)
-
-    def generate_json_files(self, files: Iterable[str]):
-        for file in files:
-            with self.content.open(file) as zf:
-                data = zf.read()
-            json_file = GenericJsonFile.from_bytes(data, file)
-            if json_file.exists:
-                yield json_file
-
-    @cached_property
-    def layout_settings_files(self) -> list[str]:
-        return list(filter(lambda name: re.search(r"/App/ui/([^/]+/)?Settings.json$", name), self.files))
+        return self.layouts.flat_map(lambda layout: layout.components)
 
     @property
     def layout_settings(self) -> IterContainer[GenericJsonFile]:
-        return IterContainer(self.generate_json_files(self.layout_settings_files))
-
-    def generate_text_files(self, files: Iterable[str]):
-        for file in files:
-            with self.content.open(file) as zf:
-                data = zf.read()
-            text_file = TextFile.from_bytes(data, file)
-            if text_file.exists:
-                yield text_file
-
-    @cached_property
-    def cs_files(self) -> list[str]:
-        return list(filter(lambda name: re.search(r"/App/.*\.cs$", name), self.files))
+        return (
+            self.files_matching(r"/App/ui/([^/]+/)?Settings.json$")
+            .map(lambda args: GenericJsonFile.from_bytes(*args))
+            .filter(lambda file: file.exists)
+        )
 
     @property
     def cs(self) -> IterContainer[TextFile]:
-        return IterContainer(self.generate_text_files(self.cs_files))
+        return self.files_matching(r"/App/.*\.cs$").map(lambda args: TextFile.from_bytes(*args)).filter(lambda file: file.exists)
 
     @property
     def program_cs(self):
-        file_data, file_path = self.first_file(r"/App/Program.cs$")
-        return TextFile.from_bytes(file_data, file_path)
-
-    def first_line_match(self, file_pattern: str, line_pattern: str, match_group: int | None) -> str | None:
-        file_names = filter(lambda name: re.search(file_pattern, name) is not None, self.files)
-        for name in file_names:
-            with self.content.open(name) as zf:
-                for line in zf.readlines():
-                    match = re.search(line_pattern, line.decode())
-                    if match is not None:
-                        if match_group is not None:
-                            return match.group(match_group)
-                        return match.group(0)
+        return self.files_matching(r"/App/Program.cs$").map(lambda args: TextFile.from_bytes(*args)).first_or_default(TextFile.empty())
 
     @cached_property
     def frontend_version(self) -> Version:
-        match = self.first_line_match(
-            r"/App/views/Home/Index.cshtml$",
-            r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"',
-            1,
+        return Version(
+            self.files_matching(r"/App/views/Home/Index.cshtml$")
+            .map(lambda args: TextFile.from_bytes(*args))
+            .first_or_default(TextFile.empty())
+            .find(r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"', 1)
         )
-        return Version(match)
 
     @cached_property
     def backend_version(self) -> Version:
-        match = self.first_line_match(
-            r"/App/[^/]+.csproj$", r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3
+        return Version(
+            self.files_matching(r"/App/[^/]+.csproj$")
+            .map(lambda args: TextFile.from_bytes(*args))
+            .map(lambda file: file.find(r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3))
+            .filter(lambda version_string: version_string is not None)
+            .first
         )
-        return Version(match)
 
 
 class Apps(IterController[App]):

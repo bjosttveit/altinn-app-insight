@@ -51,6 +51,13 @@ class IterContainer(Generic[T]):
         except StopIteration:
             return None
 
+    def first_or_default(self, default: T) -> T:
+        (t,) = self.__get_iter()
+        try:
+            return next(t)
+        except StopIteration:
+            return default
+
     @cached_property
     def length(self) -> int:
         return len(self.list)

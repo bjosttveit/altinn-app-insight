@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from types import EllipsisType
-from typing import overload
+from typing import cast, overload
 
 from package.iter import IterContainer
 
@@ -11,6 +11,10 @@ class TextFile:
     def __init__(self, text: str | None, file_path: str | None):
         self.text = text
         self.file_path = file_path
+
+    @staticmethod
+    def empty():
+        return TextFile(None, None)
 
     @staticmethod
     def from_bytes(data: bytes | None, file_path: str | None):
@@ -60,10 +64,13 @@ class TextFile:
         if self.text is None:
             return
         for match in re.finditer(pattern, self.text):
-            yield match.group(group)
+            yield cast(str, match.group(group))
 
     def find_all(self, pattern: str, group: int = 0):
         return IterContainer(self.__matches(pattern, group))
+
+    def find(self, pattern: str, group: int = 0):
+        return self.find_all(pattern, group).first
 
     @overload
     def __getitem__(self, key: str) -> str | None: ...
@@ -75,9 +82,9 @@ class TextFile:
     def __getitem__(self, key: tuple[str, int | EllipsisType, slice]) -> IterContainer[str]: ...
     def __getitem__(self, key: str | tuple[str, int] | tuple[str, int | EllipsisType, int] | tuple[str, int | EllipsisType, slice]):
         if isinstance(key, str):
-            return self.find_all(key).first
+            return self.find(key)
         if len(key) == 2:
             (pattern, group) = key
-            return self.find_all(pattern, group).first
+            return self.find(pattern, group)
         (pattern, group, slice_key) = key
         return self.find_all(pattern, group if isinstance(group, int) else 0)[slice_key]
