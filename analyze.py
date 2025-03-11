@@ -83,7 +83,9 @@ class App:
     def wrap_open_app(__func: Callable[[App], T]) -> Callable[[App], T]:
         def func(app: App):
             with app as open_app:
-                return __func(open_app)
+                result = __func(open_app)
+                result.__repr__()  # Make sure iterators are consumed while we are open
+                return result
 
         return func
 
