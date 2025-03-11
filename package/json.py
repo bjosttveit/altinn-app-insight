@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable, NotRequired, TypedDict, TypeVar, overload
+from typing import Iterable, Literal, NotRequired, TypedDict, TypeVar, cast, overload
 
+import re
 import jq
 import rapidjson
 
@@ -104,6 +105,30 @@ class GenericJsonFile(GenericJson[J]):
     @property
     def schema(self):
         return self[".$schema"]
+
+
+class AppsettingsJsonFile(GenericJsonFile[J]):
+    type Environment = Literal["Production", "Development", "Staging", "default"]
+
+    @staticmethod
+    def env_from_path(file_path: str | None) -> Environment | None:
+        if file_path is None:
+            return None
+
+        match = re.search(r"appsettings(\.([^.]+))?\.json$", file_path)
+        if match is None:
+            return None
+
+        group = match.group(2)
+        return cast(AppsettingsJsonFile.Environment, group) if group is not None else "default"
+
+    def __init__(self, json: J | None, file_path: str | None):
+        super().__init__(json, file_path)
+        self.environment: AppsettingsJsonFile.Environment | None = AppsettingsJsonFile.env_from_path(file_path)
+
+    @staticmethod
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return AppsettingsJsonFile(parse(data), file_path)
 
 
 class ComponentJson(TypedDict):

@@ -5,7 +5,7 @@ FETCH_FAILED = "fetch-failed"
 
 type Environment = Literal["prod", "tt02"]
 type VersionLock = dict[str, LockData]
-type Status = Literal["success"] | Literal["failed"]
+type Status = Literal["success", "failed"]
 
 
 class LockData(TypedDict):

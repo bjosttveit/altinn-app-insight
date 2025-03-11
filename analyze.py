@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from numpy.typing import ArrayLike
 
+
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
@@ -29,6 +30,7 @@ from package import (
     IterController,
     Layout,
     TextFile,
+    AppsettingsJsonFile,
     Version,
     VersionLock,
     setup_plot,
@@ -166,6 +168,14 @@ class App:
         return (
             self.files_matching(r"/App/ui/([^/]+/)?Settings.json$")
             .map(lambda args: GenericJsonFile.from_bytes(*args))
+            .filter(lambda file: file.exists)
+        )
+
+    @property
+    def app_settings(self) -> IterContainer[AppsettingsJsonFile]:
+        return (
+            self.files_matching(r"/App/appsettings(\.[^.]+)?\.json$")
+            .map(lambda args: AppsettingsJsonFile.from_bytes(*args))
             .filter(lambda file: file.exists)
         )
 
@@ -540,6 +550,17 @@ def main():
         # print(
         #     apps.where(lambda app: app.program_cs[r"\.AddTransient<IFormDataValidator,"] != None).select(
         #         {"Validators": lambda app: app.program_cs[r"\.AddTransient<IFormDataValidator,\s*([^>]+)>", 1, :]}
+        #     )
+        # )
+
+        # Uses RemoveHiddenData
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "prod"
+        #         and app.app_settings.some(
+        #             lambda app_settings: app_settings.environment in ["Production", "default"]
+        #             and app_settings[".AppSettings.RemoveHiddenData"] == True
+        #         )
         #     )
         # )
 
