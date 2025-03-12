@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 from numpy.typing import ArrayLike
 
@@ -68,6 +68,9 @@ class App:
     @cached_property
     def data_values(self) -> list[object]:
         return list(self.data.values())
+
+    def __getitem__(self, key: str) -> object:
+        return self.data[key]
 
     T = TypeVar("T")
 
@@ -274,6 +277,19 @@ class Apps(IterController[App]):
     def data_values(self) -> list[object]:
         return [func(self) for func in self.selector.values()]
 
+    @overload
+    def __getitem__(self, key: str) -> object: ...
+    @overload
+    def __getitem__(self, key: int) -> App: ...
+    @overload
+    def __getitem__(self, key: slice) -> Apps: ...
+    def __getitem__(self, key: str | int | slice):
+        if isinstance(key, str):
+            return self.groupings[key] if key in self.group_keys else self.selector[key](self)
+        if isinstance(key, slice):
+            return self.with_iterable(self.i[key])
+        return self.i[key]
+
     def limit(self, limit: int) -> Apps:
         return self[:limit]
 
@@ -383,6 +399,15 @@ class GroupedApps(IterController[Apps]):
         table = tabulate(data, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
+
+    @overload
+    def __getitem__(self, key: int) -> Apps: ...
+    @overload
+    def __getitem__(self, key: slice) -> GroupedApps: ...
+    def __getitem__(self, key: int | slice):
+        if isinstance(key, slice):
+            return self.with_iterable(self.i[key])
+        return self.i[key]
 
     def limit(self, limit: int) -> GroupedApps:
         return self[:limit]

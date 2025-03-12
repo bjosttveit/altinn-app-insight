@@ -10,5 +10,7 @@
         "line_length": 140,
         "string_normalization": true
     },
-    "formatOnSave": true
+    "formatOnSave": true,
+    "suppressFormatterErrors": true,
+    "suppressFormatterErrorsIFFAutoFormatOnSave": true
 }

@@ -166,9 +166,6 @@ class IterController(ABC, Generic[T]):
     def __init__(self, iterable: IterContainer[T]):
         self.i = iterable
 
-    @abstractmethod
-    def with_iterable(self, iterable: IterContainer[T]) -> Self: ...
-
     @property
     def list(self) -> list[T]:
         return self.i.list
@@ -180,15 +177,6 @@ class IterController(ABC, Generic[T]):
     @property
     def is_empty(self):
         return self.i.is_empty
-
-    @overload
-    def __getitem__(self, key: int) -> T: ...
-    @overload
-    def __getitem__(self, key: slice) -> Self: ...
-    def __getitem__(self, key: int | slice):
-        if isinstance(key, slice):
-            return self.with_iterable(self.i[key])
-        return self.i[key]
 
     def __len__(self):
         return self.length
