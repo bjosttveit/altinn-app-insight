@@ -2,13 +2,5 @@
   "IPCompleter": {
     "use_jedi": false,
     "evaluation": "forbidden"
-  },
-  "IPKernelApp": {
-    "exec_lines": [
-      "import sys",
-      "sys.path.append(\"..\")",
-      "import os",
-      "os.chdir(\"..\")"
-    ]
   }
 }
