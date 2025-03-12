@@ -9,7 +9,7 @@ download-retry-failed:
 .PHONY: install
 install:
 	uv sync
-	uv pip install .
+	uv pip install --reinstall .
 
 .PHONY: run
 run: install
