@@ -20,10 +20,12 @@ dependencies = [
 dev = [
     "black[jupyter]>=24.10.0",
     "jupyterlab-lsp>=5.1.0",
-    "pylsp-mypy>=0.7.0",
-    "python-lsp-black>=2.0.0",
-    "python-lsp-server[pyflakes,rope]>=1.12.2",
+    "pyright[nodejs]>=1.1.396",
 ]
+
+[tool.setuptools.packages.find]
+include = ["package"]
 
 [tool.black]
 line-length = 140
+

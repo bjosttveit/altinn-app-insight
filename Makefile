@@ -6,7 +6,19 @@ download:
 download-retry-failed:
 	uv run download.py --retry-failed
 
+.PHONY: install
+install:
+	uv sync
+	uv pip install .
+
 .PHONY: run
-run:
-	# uv run jupyter lab ./notebooks --config="./.jupyter/lab/user-settings"
-	uv run jupyter lab ./notebooks
+run: install
+	uv run --env-file .env jupyter lab 
+
+.PHONY: run-debug
+run-debug: install
+	uv run --env-file .env jupyter lab --debug
+
+.PHONY: format
+format:
+	uv run python -m black .

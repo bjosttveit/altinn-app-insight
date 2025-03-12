@@ -12,7 +12,7 @@ import aiofiles
 import aiofiles.os
 import httpx
 
-from package import Cluster, Deployment, Release, VersionLock, get_valid_envs, makeLock
+from package.repo import Cluster, Deployment, Release, VersionLock, get_valid_envs, makeLock
 
 
 class Keys(TypedDict):

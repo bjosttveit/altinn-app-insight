@@ -1,0 +1,23 @@
+{
+  "ServerApp": {
+    "root_dir": "."
+  },
+  "FileContentsManager": {
+    "root_dir": "./notebooks"
+  },
+  "LanguageServerManager": {
+    "autodetect": false,
+    "language_servers": {
+      "pyright-langserver": {
+        "priority": 1000,
+        "version": 2,
+        "argv": ["pyright-langserver", "--stdio"],
+        "languages": ["python"],
+        "display_name": "pyright",
+        "serverSettings": {
+          "python.analysis.extraPaths": [".."]
+        }
+      }
+    }
+  }
+}
