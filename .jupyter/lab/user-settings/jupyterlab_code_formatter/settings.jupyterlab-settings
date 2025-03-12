@@ -1,0 +1,14 @@
+{
+    "preferences": {
+        "default_formatter": {
+            "python": [
+                "black"
+            ]
+        }
+    },
+    "black": {
+        "line_length": 140,
+        "string_normalization": true
+    },
+    "formatOnSave": true
+}

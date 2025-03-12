@@ -80,6 +80,9 @@ target/
 .virtual_documents
 .jupyter/*
 !.jupyter/jupyter_server_config.json
+!.jupyter/lab/
+.jupyter/lab/*
+!.jupyter/lab/user-settings/
 
 # IPython
 .ipython/*

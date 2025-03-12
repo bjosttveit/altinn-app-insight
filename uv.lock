@@ -30,6 +30,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "black", extra = ["jupyter"] },
+    { name = "jupyterlab-code-formatter" },
     { name = "jupyterlab-lsp" },
     { name = "pyright", extra = ["nodejs"] },
 ]
@@ -50,6 +51,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "black", extras = ["jupyter"], specifier = ">=24.10.0" },
+    { name = "jupyterlab-code-formatter", specifier = ">=3.0.2" },
     { name = "jupyterlab-lsp", specifier = ">=5.1.0" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.396" },
 ]
@@ -777,6 +779,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/17/6f3d73c3e54b71bbaf03edcc4a54b0aa6328e0a134755f297ea87d425711/jupyterlab-4.3.5.tar.gz", hash = "sha256:c779bf72ced007d7d29d5bcef128e7fdda96ea69299e19b04a43635a7d641f9d", size = 21800023 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/73/6f/94d4c879b3e2b7b9bca1913ea6fbbef180f8b1ed065b46ade40d651ec54d/jupyterlab-4.3.5-py3-none-any.whl", hash = "sha256:571bbdee20e4c5321ab5195bc41cf92a75a5cff886be5e57ce78dfa37a5e9fdb", size = 11666944 },
+]
+
+[[package]]
+name = "jupyterlab-code-formatter"
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jupyter-server" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/a0/279f8ab354f944cd54fc124eeb6112f4d4fd22c6834e96ca48a13bc015a4/jupyterlab_code_formatter-3.0.2.tar.gz", hash = "sha256:55adb8fa8b9bd58f0b39e7d3ead6c1e862e9ebc1444a66cdb4233d8dc6351d4b", size = 3323619 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/82/198e37071ca3f5709b80b19d99b5498f75f020e9052b8f7f750bd3580ad6/jupyterlab_code_formatter-3.0.2-py3-none-any.whl", hash = "sha256:9f4c5be0a5296029207d965da7b65621aa8a06d39fc3a5d8e59d1f3db88997fd", size = 33034 },
 ]
 
 [[package]]

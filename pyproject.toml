@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "black[jupyter]>=24.10.0",
+    "jupyterlab-code-formatter>=3.0.2",
     "jupyterlab-lsp>=5.1.0",
     "pyright[nodejs]>=1.1.396",
 ]
