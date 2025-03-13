@@ -115,7 +115,9 @@ class IterContainer(Generic[T]):
 
     def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R]]) -> IterContainer[R]:
         (a,) = self.__get_iter()
-        return self.with_iterable((c for b in self.__map(func, a) for c in (b.__iterable if isinstance(b, IterContainer) else b)))
+        return self.with_iterable(
+            (c for b in self.__map(func, a) for c in (b.__iterable if isinstance(b, IterContainer) else b))
+        )
 
     def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
         a, b = self.__get_iter(2)
@@ -155,10 +157,14 @@ class IterContainer(Generic[T]):
 
     K = TypeVar("K")
 
-    def group_by[K, R](self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]) -> IterContainer[R]:
+    def group_by[
+        K, R
+    ](self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]) -> IterContainer[R]:
         (a,) = self.__get_iter()
         s = self.__sorted(a, key_func)  # type: ignore how can I define a generic type which "extends" SupportsRichComparison?
-        g = groupby(s, key=key_func)  # This does not use the ThreadPoolExecutor, but the sort does and so the values should be cached?
+        g = groupby(
+            s, key=key_func
+        )  # This does not use the ThreadPoolExecutor, but the sort does and so the values should be cached?
         return self.with_iterable(starmap(lambda k, l: map_func(k, self.with_iterable(list(l))), g))
 
 

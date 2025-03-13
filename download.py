@@ -222,7 +222,9 @@ class QueryClient:
                     "GET",
                     release.repo_download_url,
                     follow_redirects=True,
-                    headers={"Authorization": f"token {self.context.tokenProd if not release.dev else self.context.tokenDev}"},
+                    headers={
+                        "Authorization": f"token {self.context.tokenProd if not release.dev else self.context.tokenDev}"
+                    },
                 ) as response:
                     response.raise_for_status()
                     async for chunk in response.aiter_bytes(chunk_size=4096):

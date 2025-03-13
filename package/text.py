@@ -80,7 +80,9 @@ class TextFile:
     def __getitem__(self, key: tuple[str, int | EllipsisType, int]) -> str: ...
     @overload
     def __getitem__(self, key: tuple[str, int | EllipsisType, slice]) -> IterContainer[str]: ...
-    def __getitem__(self, key: str | tuple[str, int] | tuple[str, int | EllipsisType, int] | tuple[str, int | EllipsisType, slice]):
+    def __getitem__(
+        self, key: str | tuple[str, int] | tuple[str, int | EllipsisType, int] | tuple[str, int | EllipsisType, slice]
+    ):
         if isinstance(key, str):
             return self.find(key)
         if len(key) == 2:

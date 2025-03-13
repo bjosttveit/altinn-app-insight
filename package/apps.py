@@ -128,7 +128,11 @@ class App:
             with self.content.open(path) as zf:
                 return zf.read()
 
-        return IterContainer(self.files).filter(lambda path: re.search(file_pattern, path) is not None).map(lambda path: (read(path), path))
+        return (
+            IterContainer(self.files)
+            .filter(lambda path: re.search(file_pattern, path) is not None)
+            .map(lambda path: (read(path), path))
+        )
 
     @cached_property
     def application_metadata(self):
@@ -176,11 +180,19 @@ class App:
 
     @property
     def cs(self) -> IterContainer[TextFile]:
-        return self.files_matching(r"/App/.*\.cs$").map(lambda args: TextFile.from_bytes(*args)).filter(lambda file: file.exists)
+        return (
+            self.files_matching(r"/App/.*\.cs$")
+            .map(lambda args: TextFile.from_bytes(*args))
+            .filter(lambda file: file.exists)
+        )
 
     @property
     def program_cs(self):
-        return self.files_matching(r"/App/Program.cs$").map(lambda args: TextFile.from_bytes(*args)).first_or_default(TextFile.empty())
+        return (
+            self.files_matching(r"/App/Program.cs$")
+            .map(lambda args: TextFile.from_bytes(*args))
+            .first_or_default(TextFile.empty())
+        )
 
     @cached_property
     def frontend_version(self) -> Version:
@@ -188,7 +200,9 @@ class App:
             self.files_matching(r"/App/views/Home/Index.cshtml$")
             .map(lambda args: TextFile.from_bytes(*args))
             .first_or_default(TextFile.empty())
-            .find(r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"', 1)
+            .find(
+                r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"', 1
+            )
         )
 
     @cached_property
@@ -196,14 +210,23 @@ class App:
         return Version(
             self.files_matching(r"/App/[^/]+.csproj$")
             .map(lambda args: TextFile.from_bytes(*args))
-            .map(lambda file: file.find(r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3))
+            .map(
+                lambda file: file.find(
+                    r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3
+                )
+            )
             .filter(lambda version_string: version_string is not None)
             .first
         )
 
 
 class Apps(IterController[App]):
-    def __init__(self, apps: IterContainer[App], groupings: dict[str, object] = {}, selector: dict[str, Callable[[Apps], object]] = {}):
+    def __init__(
+        self,
+        apps: IterContainer[App],
+        groupings: dict[str, object] = {},
+        selector: dict[str, Callable[[Apps], object]] = {},
+    ):
         super().__init__(apps)
         self.groupings = groupings
         self.selector = selector
@@ -338,13 +361,19 @@ class GroupedApps(IterController[Apps]):
         if type(X) == tuple:
             columns = [
                 tuple(
-                    str(group.groupings[x]) if x in self.list[0].group_keys else str(group.data_values[group.data_keys.index(x)]) for x in X
+                    (
+                        str(group.groupings[x])
+                        if x in self.list[0].group_keys
+                        else str(group.data_values[group.data_keys.index(x)])
+                    )
+                    for x in X
                 )
                 for group in self.list
             ]
         else:
             columns = [
-                tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)]) for group in self.list
+                tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)])
+                for group in self.list
             ]
 
         return list(map(lambda column: ", ".join(column), columns))

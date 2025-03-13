@@ -61,35 +61,55 @@ class Version(str):
         return self.__version_string if self.__version_string is not None else "None"
 
     def __le__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 
         return self == other or self < other
 
     def __ge__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 
         return self == other or self > other
 
     def __ne__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 
         return self.__version_string != other.__version_string
 
     def __eq__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 
         return self.__version_string == other.__version_string
 
     def __lt__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 
@@ -122,7 +142,11 @@ class Version(str):
         return False
 
     def __gt__(self, other_version):
-        other = other_version if isinstance(other_version, Version) else Version(other_version) if type(other_version) == str else None
+        other = (
+            other_version
+            if isinstance(other_version, Version)
+            else Version(other_version) if type(other_version) == str else None
+        )
         if not self.exists or other is None or not other.exists:
             return False
 

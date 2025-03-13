@@ -1,3 +1,8 @@
 {
-    "autoCompletion": true
+    "autoCompletion": true,
+    "availableProviders": {
+        "lsp": 1000,
+        "CompletionProvider:context": 500,
+        "CompletionProvider:kernel": -1
+    }
 }

@@ -28,5 +28,5 @@ dev = [
 include = ["package"]
 
 [tool.black]
-line-length = 140
+line-length = 120
 

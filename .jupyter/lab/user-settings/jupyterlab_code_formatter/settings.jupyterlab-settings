@@ -7,7 +7,7 @@
         }
     },
     "black": {
-        "line_length": 140,
+        "line_length": 120,
         "string_normalization": true
     },
     "formatOnSave": true,
