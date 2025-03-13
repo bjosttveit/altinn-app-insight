@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Callable, Self, overload
+from typing import TYPE_CHECKING, Callable, overload
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -15,8 +15,8 @@ T = TypeVar("T")
 
 
 class IterContainer(Generic[T]):
-    def __init__(self, iterable: Iterable[T], executor: ThreadPoolExecutor | None = None):
-        self.__iterable = iterable
+    def __init__(self, iterable: Iterable[T] | None = None, executor: ThreadPoolExecutor | None = None):
+        self.__iterable: Iterable[T] = iterable if iterable is not None else []
         self.executor = executor
 
     def __repr__(self):

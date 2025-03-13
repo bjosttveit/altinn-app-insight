@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, overload
 from numpy.typing import ArrayLike
 
 from .iter import IterContainer, IterController
-from .json import AppsettingsJsonFile, Component, GenericJsonFile, Layout
+from .json import AppsettingsJsonFile, Component, GenericJsonFile, Layout, LayoutSet, LayoutSets
 from .plotting import setup_plot
 from .repo import Environment, VersionLock
 from .text import TextFile
@@ -19,7 +19,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from functools import cached_property
+from functools import cache, cached_property
 from io import BufferedReader
 from pathlib import Path
 from typing import Callable, TypeVar, cast
@@ -123,15 +123,24 @@ class App:
     def files(self) -> list[str]:
         return self.content.namelist()
 
-    def files_matching(self, file_pattern: str):
-        def read(path: str):
-            with self.content.open(path) as zf:
-                return zf.read()
+    @cache
+    def read_file(self, path: str):
+        with self.content.open(path) as zf:
+            return zf.read()
 
+    @cache
+    def file_exists(self, file_pattern: str):
         return (
             IterContainer(self.files)
             .filter(lambda path: re.search(file_pattern, path) is not None)
-            .map(lambda path: (read(path), path))
+            .is_not_empty
+        )
+
+    def files_matching(self, file_pattern: str):
+        return (
+            IterContainer(self.files)
+            .filter(lambda path: re.search(file_pattern, path) is not None)
+            .map(lambda path: (self.read_file(path), path))
         )
 
     @cached_property
@@ -142,33 +151,87 @@ class App:
             .first_or_default(GenericJsonFile.empty())
         )
 
-    @cached_property
+    @property
     def layout_sets(self):
-        return (
+        layout_sets = (
             self.files_matching(r"/App/ui/layout-sets.json$")
-            .map(lambda args: GenericJsonFile.from_bytes(*args))
-            .first_or_default(GenericJsonFile.empty())
+            .map(lambda args: LayoutSets.from_bytes(*args))
+            .first_or_default(LayoutSets.empty())
         )
+
+        # If layout-sets.json is defined, read defined folders
+        if layout_sets.json is not None:
+            layout_sets.sets = IterContainer(layout_sets.json["sets"]).map(
+                lambda set: LayoutSet(
+                    # JSON
+                    set,
+                    # Layouts
+                    self.files_matching(rf"/App/ui/{set['id']}/layouts/.+\.json$")
+                    .map(lambda args: Layout.from_bytes(*args))
+                    .filter(lambda layout: layout.exists),
+                    # LayoutSettings
+                    self.files_matching(rf"/App/ui/{set['id']}/Settings.json$")
+                    .map(lambda args: GenericJsonFile.from_bytes(*args)),
+                    # LayoutSets
+                    layout_sets,
+                )
+            )
+        # layout-sets.json does not exist, we have at most one
+        else:
+            # We have multiple layout files
+            if self.file_exists(rf"/App/ui/layouts/.+\.json$"):
+                layout_sets.sets = IterContainer(
+                    [
+                        LayoutSet(
+                            # JSON
+                            None,
+                            # Layouts
+                            self.files_matching(rf"/App/ui/layouts/.+\.json$")
+                            .map(lambda args: Layout.from_bytes(*args))
+                            .filter(lambda layout: layout.exists),
+                            # LayoutSettings
+                            self.files_matching(rf"/App/ui/Settings\.json$")
+                            .map(lambda args: GenericJsonFile.from_bytes(*args)),
+                            # LayoutSets
+                            layout_sets,
+                        )
+                    ]
+                )
+            # We have only one layout file
+            elif self.file_exists(rf"/App/ui/FormLayout\.json$"):
+                layout_sets.sets = IterContainer(
+                    [
+                        LayoutSet(
+                            # JSON
+                            None,
+                            # Layouts
+                            self.files_matching(rf"/App/ui/FormLayout\.json$")
+                            .map(lambda args: Layout.from_bytes(*args))
+                            .filter(lambda layout: layout.exists),
+                            # LayoutSettings
+                            self.files_matching(rf"/App/ui/Settings\.json$")
+                            .map(lambda args: GenericJsonFile.from_bytes(*args)),
+                            # LayoutSets
+                            layout_sets,
+                        )
+                    ]
+                )
+            else:
+                layout_sets.sets = IterContainer()
+
+        return layout_sets
 
     @property
     def layouts(self) -> IterContainer[Layout]:
-        return (
-            self.files_matching(r"/App/ui/(FormLayout\.json$|([^/]+/)?layouts/.+\.json$)")
-            .map(lambda args: Layout.from_bytes(*args))
-            .filter(lambda layout: layout.exists)
-        )
+        return self.layout_sets.sets.flat_map(lambda set: set.layouts)
 
     @property
     def components(self) -> IterContainer[Component]:
-        return self.layouts.flat_map(lambda layout: layout.components)
+        return self.layout_sets.sets.flat_map(lambda set: set.layouts.flat_map(lambda layout: layout.components))
 
     @property
     def layout_settings(self) -> IterContainer[GenericJsonFile]:
-        return (
-            self.files_matching(r"/App/ui/([^/]+/)?Settings.json$")
-            .map(lambda args: GenericJsonFile.from_bytes(*args))
-            .filter(lambda file: file.exists)
-        )
+        return self.layout_sets.sets.map(lambda set: set.layout_settings)
 
     @property
     def app_settings(self) -> IterContainer[AppsettingsJsonFile]:

@@ -96,14 +96,31 @@ def main():
         #     apps.where(lambda app: app.components.some(lambda component: component.type == "Custom"))
         #     .select(
         #         {
-        #             "Unique custom components": lambda app: app.components.filter(lambda component: component.type == "Custom")
-        #             .map(lambda component: component.jq(".tagName").first)
-        #             .filter(lambda tagName: tagName is not None)
+        #             "Unique custom components": lambda app: app.components.filter(
+        #                 lambda component: component.type == "Custom"
+        #             )
+        #             .map(lambda component: component[".tagName"])
+        #             .filter(lambda tagName: tagName != None)
         #             .unique()
         #             .length
         #         }
         #     )
         #     .order_by(lambda app: (app.data["Unique custom components"],), reverse=True)
+        # )
+
+        # print(
+        #     apps.where(lambda app: app.components.some(lambda component: component.type == "Custom"))
+        #     .select(
+        #         {
+        #             "Custom component tags": lambda app: app.components.filter(
+        #                 lambda component: component.type == "Custom"
+        #             )
+        #             .map(lambda component: component[".tagName"])
+        #             .unique()
+        #             .sort()
+        #         }
+        #     )
+        #     .order_by(lambda app: (app.org, app.app))
         # )
 
         # print(apps.where(lambda app: app.frontend_version.major == 2).select({"Frontend version": lambda app: app.frontend_version}))
@@ -116,7 +133,9 @@ def main():
         # )
 
         # Apps using layout sets in v3 (prod)
-        # print(apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 3 and app.layout_sets.exists))
+        # print(
+        #     apps.where(lambda app: app.env == "prod" and app.frontend_version.major == 3 and app.layout_sets_new.exists)
+        # )
 
         # Apps actually using navigation
         # print(
@@ -148,15 +167,21 @@ def main():
         # )
 
         # Uses RemoveHiddenData
-        print(
-            apps.where(
-                lambda app: app.env == "prod"
-                and app.app_settings.some(
-                    lambda app_settings: app_settings.environment in ["Production", "default"]
-                    and app_settings[".AppSettings.RemoveHiddenData"] == True
-                )
-            )
-        )
+        # print(
+        #     apps.where(
+        #         lambda app: app.env == "prod"
+        #         and app.app_settings.some(
+        #             lambda app_settings: app_settings.environment in ["Production", "default"]
+        #             and app_settings[".AppSettings.RemoveHiddenData"] == True
+        #         )
+        #     )
+        # )
+
+        # print(
+        #     apps.where(
+        #         lambda app: app.frontend_version.exists and app.layouts.is_not_empty and app.layout_settings.is_empty
+        #     ).select({"Frontend version": lambda app: app.frontend_version})
+        # )
 
         print()
         print(f"Time: {time() - start:.2f}s")

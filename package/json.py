@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import cached_property
 from typing import Iterable, Literal, NotRequired, TypedDict, TypeVar, cast, overload
 
 import re
@@ -71,7 +72,7 @@ class GenericJson[J]:
 
     def jq(self, query: str) -> IterContainer[GenericJson[object]]:
         if not self.exists:
-            return IterContainer([])
+            return IterContainer()
         iterable: Iterable[object] = iter(jq.compile(query).input_value(self.json))
         json_iterable = map(lambda json: GenericJson(json), iterable)
         return IterContainer(json_iterable)
@@ -148,6 +149,16 @@ class LayoutJson(TypedDict):
     data: LayoutDataJson
 
 
+class LayoutSetJson(TypedDict):
+    id: str
+    dataType: str
+    tasks: list[str] | None
+
+
+class LayoutSetsJson(TypedDict):
+    sets: list[LayoutSetJson]
+
+
 class Component(GenericJson[ComponentJson]):
     def __init__(self, json: ComponentJson | None, layout: Layout):
         super().__init__(json)
@@ -179,3 +190,55 @@ class Layout(GenericJsonFile[LayoutJson]):
     @staticmethod
     def from_bytes(data: bytes | None, file_path: str | None):
         return Layout(parse(data), file_path)
+
+
+class LayoutSet(GenericJson[LayoutSetJson]):
+    def __init__(
+        self,
+        json: LayoutSetJson | None,
+        layouts: IterContainer[Layout],
+        layout_settings: IterContainer[GenericJsonFile],
+        layout_sets: LayoutSets,
+    ):
+        super().__init__(json)
+        self.layouts = layouts
+        self.__layout_settings = layout_settings
+        self.layout_sets = layout_sets
+
+    # Lazy load by keeping it in an iterator until access
+    @cached_property
+    def layout_settings(self):
+        return self.__layout_settings.first_or_default(GenericJsonFile.empty())
+
+    @property
+    def id(self):
+        if self.json is None:
+            return None
+        return self.json["id"]
+
+    @property
+    def data_type(self):
+        if self.json is None:
+            return None
+        return self.json["dataType"]
+
+    @property
+    def tasks(self):
+        if self.json is None:
+            return None
+        return self.json["tasks"]
+
+
+class LayoutSets(GenericJsonFile[LayoutSetsJson]):
+    sets: IterContainer[LayoutSet]
+
+    def __init__(self, json: LayoutSetsJson | None, file_path: str | None):
+        super().__init__(json, file_path)
+
+    @staticmethod
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return LayoutSets(parse(data), file_path)
+
+    @staticmethod
+    def empty():
+        return LayoutSets(None, None)
