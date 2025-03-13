@@ -9,7 +9,7 @@ def setup_plot(title: str | None = None):
     fig.autofmt_xdate()
     canvas = cast(Canvas, fig.canvas)
     canvas.header_visible = False
-    canvas.capture_scroll = True
+    canvas.capture_scroll = False
     if title is not None:
         fig.suptitle(title)
     return fig, ax
