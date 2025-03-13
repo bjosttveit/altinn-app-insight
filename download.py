@@ -190,14 +190,14 @@ class QueryClient:
                 self.context.next_version_lock[deployment.key] = prev_version
                 return
 
-        if self.context.tokenProd is not None:
+        if self.context.tokenProd:
             release_from_prod = await self.try_fetch_release(deployment, False)
             if release_from_prod is not None:
                 print(f"Fetched releases for {deployment.key}")
                 return release_from_prod
 
         # Check dev.altinn.studio if release was not found
-        if self.context.tokenDev is not None:
+        if self.context.tokenDev:
             release_from_dev = await self.try_fetch_release(deployment, True)
             if release_from_dev is not None:
                 print(f"Fetched releases for {deployment.key} (dev.altinn.studio)")
@@ -208,7 +208,7 @@ class QueryClient:
     async def update_repository(self, release: Release):
         prev_version = self.context.prev_version_lock.get(release.key)
 
-        if (release.dev and self.context.tokenDev is None) or (not release.dev and self.context.tokenProd is None):
+        if (release.dev and not self.context.tokenDev) or (not release.dev and not self.context.tokenProd):
             print(f"Skipping {release.key} due to missing studio token")
             if prev_version is not None:
                 self.context.next_version_lock[release.key] = prev_version
@@ -248,11 +248,11 @@ async def main(args: Args):
     if key_path.exists():
         with open(key_path, "r") as f:
             keys = json.load(f)
-            if keys.get("studioProd") is None and keys.get("studioDev") is None:
+            if keys is None or (not keys.get("studioProd") and not keys.get("studioDev")):
                 print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'key.json' file")
                 exit(1)
     else:
-        print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'keys.json' file")
+        print("Please provide studio access tokens 'studioProd' and 'studioDev' in a 'key.json' file")
         exit(1)
 
     cache_dir = Path(args.cache_dir)
