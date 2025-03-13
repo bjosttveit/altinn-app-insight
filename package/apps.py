@@ -130,11 +130,7 @@ class App:
 
     @cache
     def file_exists(self, file_pattern: str):
-        return (
-            IterContainer(self.files)
-            .filter(lambda path: re.search(file_pattern, path) is not None)
-            .is_not_empty
-        )
+        return IterContainer(self.files).filter(lambda path: re.search(file_pattern, path) is not None).is_not_empty
 
     def files_matching(self, file_pattern: str):
         return (
@@ -170,54 +166,43 @@ class App:
                     .map(lambda args: Layout.from_bytes(*args))
                     .filter(lambda layout: layout.exists),
                     # LayoutSettings
-                    self.files_matching(rf"/App/ui/{set['id']}/Settings.json$")
-                    .map(lambda args: GenericJsonFile.from_bytes(*args)),
+                    self.files_matching(rf"/App/ui/{set['id']}/Settings.json$").map(
+                        lambda args: GenericJsonFile.from_bytes(*args)
+                    ),
                     # LayoutSets
                     layout_sets,
                 )
             )
-        # layout-sets.json does not exist, we have at most one
+        # layout-sets.json does not exist, we have at most one set
         else:
-            # We have multiple layout files
-            if self.file_exists(rf"/App/ui/layouts/.+\.json$"):
-                layout_sets.sets = IterContainer(
+            layouts_path = (
+                multiple
+                if self.file_exists(multiple := rf"/App/ui/layouts/.+\.json$")
+                else single if self.file_exists(single := rf"/App/ui/FormLayout\.json$") else None
+            )
+            layout_sets.sets = (
+                IterContainer(
                     [
                         LayoutSet(
                             # JSON
                             None,
                             # Layouts
-                            self.files_matching(rf"/App/ui/layouts/.+\.json$")
+                            self.files_matching(layouts_path)
                             .map(lambda args: Layout.from_bytes(*args))
                             .filter(lambda layout: layout.exists),
                             # LayoutSettings
-                            self.files_matching(rf"/App/ui/Settings\.json$")
-                            .map(lambda args: GenericJsonFile.from_bytes(*args)),
+                            self.files_matching(rf"/App/ui/Settings\.json$").map(
+                                lambda args: GenericJsonFile.from_bytes(*args)
+                            ),
                             # LayoutSets
                             layout_sets,
                         )
                     ]
+                    # We don't have any layout files, so there is no point looking at settings or anything else
                 )
-            # We have only one layout file
-            elif self.file_exists(rf"/App/ui/FormLayout\.json$"):
-                layout_sets.sets = IterContainer(
-                    [
-                        LayoutSet(
-                            # JSON
-                            None,
-                            # Layouts
-                            self.files_matching(rf"/App/ui/FormLayout\.json$")
-                            .map(lambda args: Layout.from_bytes(*args))
-                            .filter(lambda layout: layout.exists),
-                            # LayoutSettings
-                            self.files_matching(rf"/App/ui/Settings\.json$")
-                            .map(lambda args: GenericJsonFile.from_bytes(*args)),
-                            # LayoutSets
-                            layout_sets,
-                        )
-                    ]
-                )
-            else:
-                layout_sets.sets = IterContainer()
+                if layouts_path is not None
+                else IterContainer()
+            )
 
         return layout_sets
 

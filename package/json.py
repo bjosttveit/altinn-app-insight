@@ -180,11 +180,10 @@ class Component(GenericJson[ComponentJson]):
 class Layout(GenericJsonFile[LayoutJson]):
     def __init__(self, json: LayoutJson | None, file_path: str | None):
         super().__init__(json, file_path)
-        self.components = IterContainer(
-            map(
-                lambda component_json: Component(component_json, self),
-                json["data"]["layout"] if json is not None else [],
-            )
+        self.components = (
+            IterContainer(json["data"]["layout"]).map(lambda component_json: Component(component_json, self))
+            if json is not None
+            else IterContainer()
         )
 
     @staticmethod
