@@ -9,14 +9,17 @@ download-retry-failed:
 .PHONY: install
 install:
 	uv sync
+
+.PHONY: build
+build: install
 	uv pip install --reinstall .
 
 .PHONY: run
-run: install
+run: build
 	uv run --env-file .env jupyter lab 
 
 .PHONY: run-debug
-run-debug: install
+run-debug: build
 	uv run --env-file .env jupyter lab --debug
 
 .PHONY: format
