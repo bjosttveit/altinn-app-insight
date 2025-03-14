@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Iterable, Literal, NotRequired, TypedDict, TypeVar, cast, overload
+from typing import Iterable, Literal, NotRequired, Self, TypedDict, TypeVar, cast, overload
 
 import re
+import pprint
 import jq
 import rapidjson
+
+from package.text import TextFile
 
 from .iter import IterContainer
 
@@ -40,7 +43,7 @@ class GenericJson[J]:
         return self.json is not None
 
     def __repr__(self):
-        return str(self.json)
+        return pprint.pformat(self.json)
 
     def __eq__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other
@@ -178,6 +181,8 @@ class Component(GenericJson[ComponentJson]):
 
 
 class Layout(GenericJsonFile[LayoutJson]):
+    layout_set: LayoutSet
+
     def __init__(self, json: LayoutJson | None, file_path: str | None):
         super().__init__(json, file_path)
         self.components = (
@@ -190,6 +195,10 @@ class Layout(GenericJsonFile[LayoutJson]):
     def from_bytes(data: bytes | None, file_path: str | None):
         return Layout(parse(data), file_path)
 
+    def set_layout_set(self, layout_set: LayoutSet) -> Self:
+        self.layout_set = layout_set
+        return self
+
 
 class LayoutSet(GenericJson[LayoutSetJson]):
     def __init__(
@@ -197,17 +206,29 @@ class LayoutSet(GenericJson[LayoutSetJson]):
         json: LayoutSetJson | None,
         layouts: IterContainer[Layout],
         layout_settings: IterContainer[GenericJsonFile],
+        rule_configuration: IterContainer[GenericJsonFile],
+        rule_handler: IterContainer[TextFile],
         layout_sets: LayoutSets,
     ):
         super().__init__(json)
         self.layouts = layouts
         self.__layout_settings = layout_settings
+        self.__rule_configuration = rule_configuration
+        self.__rule_handler = rule_handler
         self.layout_sets = layout_sets
 
     # Lazy load by keeping it in an iterator until access
     @cached_property
     def layout_settings(self):
         return self.__layout_settings.first_or_default(GenericJsonFile.empty())
+
+    @cached_property
+    def rule_configuration(self):
+        return self.__rule_configuration.first_or_default(GenericJsonFile.empty())
+
+    @cached_property
+    def rule_handler(self):
+        return self.__rule_handler.first_or_default(TextFile.empty())
 
     @property
     def id(self):

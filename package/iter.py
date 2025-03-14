@@ -20,7 +20,7 @@ class IterContainer(Generic[T]):
         self.executor = executor
 
     def __repr__(self):
-        return ", ".join(map(lambda i: str(i), self.list))
+        return "[" + ", ".join(map(lambda i: str(i), self.list)) + "]"
 
     def with_iterable[R](self, iterable: Iterable[R]) -> IterContainer[R]:
         return IterContainer(iterable, self.executor)

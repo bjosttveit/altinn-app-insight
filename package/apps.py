@@ -30,12 +30,12 @@ from tabulate import tabulate
 
 
 class App:
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path, data: dict[str, object] = {}):
+    def __init__(self, env: Environment, org: str, app: str, app_dir: Path):
         self.env: Environment = env
         self.org = org
         self.app = app
         self.__app_dir = app_dir
-        self.data = data
+        self.data = {}
 
     @property
     def key(self):
@@ -158,19 +158,29 @@ class App:
         # If layout-sets.json is defined, read defined folders
         if layout_sets.json is not None:
             layout_sets.sets = IterContainer(layout_sets.json["sets"]).map(
-                lambda set: LayoutSet(
-                    # JSON
-                    set,
-                    # Layouts
-                    self.files_matching(rf"/App/ui/{set['id']}/layouts/.+\.json$")
-                    .map(lambda args: Layout.from_bytes(*args))
-                    .filter(lambda layout: layout.exists),
-                    # LayoutSettings
-                    self.files_matching(rf"/App/ui/{set['id']}/Settings.json$").map(
-                        lambda args: GenericJsonFile.from_bytes(*args)
-                    ),
-                    # LayoutSets
-                    layout_sets,
+                lambda set: (
+                    layout_set := LayoutSet(
+                        # JSON
+                        set,
+                        # Layouts
+                        self.files_matching(rf"/App/ui/{set['id']}/layouts/.+\.json$")
+                        .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
+                        .filter(lambda layout: layout.exists),
+                        # LayoutSettings
+                        self.files_matching(rf"/App/ui/{set['id']}/Settings\.json$").map(
+                            lambda args: GenericJsonFile.from_bytes(*args)
+                        ),
+                        # RuleConfiguration
+                        self.files_matching(rf"/App/ui/{set['id']}/RuleConfiguration\.json$").map(
+                            lambda args: GenericJsonFile.from_bytes(*args)
+                        ),
+                        # RuleHandler
+                        self.files_matching(rf"/App/ui/{set['id']}/RuleHandler\.js$").map(
+                            lambda args: TextFile.from_bytes(*args)
+                        ),
+                        # LayoutSets
+                        layout_sets,
+                    )
                 )
             )
         # layout-sets.json does not exist, we have at most one set
@@ -183,16 +193,24 @@ class App:
             layout_sets.sets = (
                 IterContainer(
                     [
-                        LayoutSet(
+                        layout_set := LayoutSet(
                             # JSON
                             None,
                             # Layouts
                             self.files_matching(layouts_path)
-                            .map(lambda args: Layout.from_bytes(*args))
+                            .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
                             .filter(lambda layout: layout.exists),
                             # LayoutSettings
-                            self.files_matching(rf"/App/ui/Settings\.json$").map(
+                            self.files_matching(r"/App/ui/Settings\.json$").map(
                                 lambda args: GenericJsonFile.from_bytes(*args)
+                            ),
+                            # RuleConfiguration
+                            self.files_matching(r"/App/ui/RuleConfiguration\.json$").map(
+                                lambda args: GenericJsonFile.from_bytes(*args)
+                            ),
+                            # RuleHandler
+                            self.files_matching(r"/App/ui/RuleHandler\.js$").map(
+                                lambda args: TextFile.from_bytes(*args)
                             ),
                             # LayoutSets
                             layout_sets,
@@ -216,7 +234,19 @@ class App:
 
     @property
     def layout_settings(self) -> IterContainer[GenericJsonFile]:
-        return self.layout_sets.sets.map(lambda set: set.layout_settings)
+        return self.layout_sets.sets.map(lambda set: set.layout_settings).filter(
+            lambda layout_settings: layout_settings.exists
+        )
+
+    @property
+    def rule_configurations(self) -> IterContainer[GenericJsonFile]:
+        return self.layout_sets.sets.map(lambda set: set.rule_configuration).filter(
+            lambda rule_configuration: rule_configuration.exists
+        )
+
+    @property
+    def rule_handlers(self) -> IterContainer[TextFile]:
+        return self.layout_sets.sets.map(lambda set: set.rule_handler).filter(lambda rule_handler: rule_handler.exists)
 
     @property
     def app_settings(self) -> IterContainer[AppsettingsJsonFile]:
