@@ -202,13 +202,47 @@ class Layout(GenericJsonFile[LayoutJson]):
         return self
 
 
+class LayoutSettings(GenericJsonFile):
+    def __init__(self, json: object | None, file_path: str | None):
+        super().__init__(json, file_path)
+
+    @staticmethod
+    def empty():
+        return LayoutSettings(None, None)
+
+    @staticmethod
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return LayoutSettings(parse(data), file_path)
+
+    def set_layout_set(self, layout_set: LayoutSet) -> Self:
+        self.layout_set = layout_set
+        return self
+
+
+class RuleConfiguration(GenericJsonFile):
+    def __init__(self, json: object | None, file_path: str | None):
+        super().__init__(json, file_path)
+
+    @staticmethod
+    def empty():
+        return RuleConfiguration(None, None)
+
+    @staticmethod
+    def from_bytes(data: bytes | None, file_path: str | None):
+        return RuleConfiguration(parse(data), file_path)
+
+    def set_layout_set(self, layout_set: LayoutSet) -> Self:
+        self.layout_set = layout_set
+        return self
+
+
 class LayoutSet(GenericJson[LayoutSetJson]):
     def __init__(
         self,
         json: LayoutSetJson | None,
         layouts: IterContainer[Layout],
-        layout_settings: IterContainer[GenericJsonFile],
-        rule_configuration: IterContainer[GenericJsonFile],
+        layout_settings: IterContainer[LayoutSettings],
+        rule_configuration: IterContainer[RuleConfiguration],
         rule_handler: IterContainer[TextFile],
         layout_sets: LayoutSets,
     ):
@@ -222,11 +256,11 @@ class LayoutSet(GenericJson[LayoutSetJson]):
     # Lazy load by keeping it in an iterator until access
     @cached_property
     def layout_settings(self):
-        return self.__layout_settings.first_or_default(GenericJsonFile.empty())
+        return self.__layout_settings.first_or_default(LayoutSettings.empty().set_layout_set(self))
 
     @cached_property
     def rule_configuration(self):
-        return self.__rule_configuration.first_or_default(GenericJsonFile.empty())
+        return self.__rule_configuration.first_or_default(RuleConfiguration.empty().set_layout_set(self))
 
     @cached_property
     def rule_handler(self):

@@ -13,6 +13,8 @@ from .json import (
     LayoutSet,
     LayoutSetJson,
     LayoutSets,
+    LayoutSettings,
+    RuleConfiguration,
 )
 from .plotting import setup_plot
 from .repo import Environment, VersionLock
@@ -198,11 +200,11 @@ class App:
                     .filter(lambda layout: layout.exists),
                     # LayoutSettings
                     self.files_matching(rf"{base_path}Settings\.json$").map(
-                        lambda args: GenericJsonFile.from_bytes(*args)
+                        lambda args: LayoutSettings.from_bytes(*args).set_layout_set(layout_set)
                     ),
                     # RuleConfiguration
                     self.files_matching(rf"{base_path}RuleConfiguration\.json$").map(
-                        lambda args: GenericJsonFile.from_bytes(*args)
+                        lambda args: RuleConfiguration.from_bytes(*args).set_layout_set(layout_set)
                     ),
                     # RuleHandler
                     self.files_matching(rf"{base_path}RuleHandler\.js$").map(lambda args: TextFile.from_bytes(*args)),
@@ -223,13 +225,13 @@ class App:
         return self.layout_sets.sets.flat_map(lambda set: set.layouts.flat_map(lambda layout: layout.components))
 
     @property
-    def layout_settings(self) -> IterContainer[GenericJsonFile]:
+    def layout_settings(self) -> IterContainer[LayoutSettings]:
         return self.layout_sets.sets.map(lambda set: set.layout_settings).filter(
             lambda layout_settings: layout_settings.exists
         )
 
     @property
-    def rule_configurations(self) -> IterContainer[GenericJsonFile]:
+    def rule_configurations(self) -> IterContainer[RuleConfiguration]:
         return self.layout_sets.sets.map(lambda set: set.rule_configuration).filter(
             lambda rule_configuration: rule_configuration.exists
         )

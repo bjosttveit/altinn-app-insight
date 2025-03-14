@@ -24,4 +24,4 @@ run-debug: build
 
 .PHONY: format
 format:
-	uv run python -m black .
+	uvx black .

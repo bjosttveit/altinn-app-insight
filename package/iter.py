@@ -156,9 +156,9 @@ class IterContainer[T]:
 
     K = TypeVar("K")
 
-    def group_by[
-        K, R
-    ](self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]) -> IterContainer[R]:
+    def group_by[K, R](
+        self, key_func: Callable[[T], K], map_func: Callable[[K, IterContainer[T]], R]
+    ) -> IterContainer[R]:
         (a,) = self.__get_iter()
         s = self.__sorted(a, key_func)  # type: ignore how can I define a generic type which "extends" SupportsRichComparison?
         g = groupby(
