@@ -2,19 +2,17 @@ from __future__ import annotations
 
 from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Callable, overload
+from typing import TYPE_CHECKING, Callable, TypeVarTuple, Unpack, overload
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
 from functools import cached_property, reduce
 from itertools import compress, groupby, islice, starmap, tee
-from typing import Generic, Iterable, Iterator, TypeVar
-
-T = TypeVar("T")
+from typing import Iterable, Iterator, TypeVar
 
 
-class IterContainer(Generic[T]):
+class IterContainer[T]:
     def __init__(self, iterable: Iterable[T] | None = None, executor: ThreadPoolExecutor | None = None):
         self.__iterable: Iterable[T] = iterable if iterable is not None else []
         self.executor = executor
@@ -24,9 +22,6 @@ class IterContainer(Generic[T]):
 
     def with_iterable[R](self, iterable: Iterable[R]) -> IterContainer[R]:
         return IterContainer(iterable, self.executor)
-
-    P = TypeVar("P")
-    R = TypeVar("R")
 
     def __map[P, R](self, func: Callable[[P], R], iterable: Iterable[P]) -> Iterable[R]:
         if self.executor is not None:
@@ -113,6 +108,10 @@ class IterContainer(Generic[T]):
         (a,) = self.__get_iter()
         return self.with_iterable(self.__map(func, a))
 
+    def starmap[*Ts, R](self: IterContainer[tuple[*Ts]], func: Callable[[*Ts], R]) -> IterContainer[R]:
+        (a,) = self.__get_iter()
+        return self.with_iterable(starmap(func, a))
+
     def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R]]) -> IterContainer[R]:
         (a,) = self.__get_iter()
         return self.with_iterable(
@@ -168,7 +167,7 @@ class IterContainer(Generic[T]):
         return self.with_iterable(starmap(lambda k, l: map_func(k, self.with_iterable(list(l))), g))
 
 
-class IterController(ABC, Generic[T]):
+class IterController[T](ABC):
     def __init__(self, iterable: IterContainer[T]):
         self.i = iterable
 

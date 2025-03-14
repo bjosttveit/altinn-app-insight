@@ -43,7 +43,9 @@ class GenericJson[J]:
         return self.json is not None
 
     def __repr__(self):
-        return pprint.pformat(self.json)
+        if isinstance(self.json, dict) or isinstance(self.json, list):
+            return pprint.pformat(self.json)
+        return str(self.json)
 
     def __eq__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other

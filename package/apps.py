@@ -5,7 +5,15 @@ from typing import TYPE_CHECKING, overload
 from numpy.typing import ArrayLike
 
 from .iter import IterContainer, IterController
-from .json import AppsettingsJsonFile, Component, GenericJsonFile, Layout, LayoutSet, LayoutSets
+from .json import (
+    AppsettingsJsonFile,
+    Component,
+    GenericJsonFile,
+    Layout,
+    LayoutSet,
+    LayoutSetJson,
+    LayoutSets,
+)
 from .plotting import setup_plot
 from .repo import Environment, VersionLock
 from .text import TextFile
@@ -72,12 +80,10 @@ class App:
     def __getitem__(self, key: str) -> object:
         return self.data[key]
 
-    T = TypeVar("T")
-
     # Uses a context manager to make sure any file operations are closed
     # Does not open any files yet, this happens lazily only when needed
     @staticmethod
-    def wrap_open_app(__func: Callable[[App], T]) -> Callable[[App], T]:
+    def wrap_open_app[T](__func: Callable[[App], T]) -> Callable[[App], T]:
         def func(app: App):
             with app as open_app:
                 result = __func(open_app)
@@ -155,72 +161,56 @@ class App:
             .first_or_default(LayoutSets.empty())
         )
 
-        # If layout-sets.json is defined, read defined folders
-        if layout_sets.json is not None:
-            layout_sets.sets = IterContainer(layout_sets.json["sets"]).map(
-                lambda set: (
-                    layout_set := LayoutSet(
-                        # JSON
-                        set,
-                        # Layouts
-                        self.files_matching(rf"/App/ui/{set['id']}/layouts/.+\.json$")
-                        .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
-                        .filter(lambda layout: layout.exists),
-                        # LayoutSettings
-                        self.files_matching(rf"/App/ui/{set['id']}/Settings\.json$").map(
-                            lambda args: GenericJsonFile.from_bytes(*args)
-                        ),
-                        # RuleConfiguration
-                        self.files_matching(rf"/App/ui/{set['id']}/RuleConfiguration\.json$").map(
-                            lambda args: GenericJsonFile.from_bytes(*args)
-                        ),
-                        # RuleHandler
-                        self.files_matching(rf"/App/ui/{set['id']}/RuleHandler\.js$").map(
-                            lambda args: TextFile.from_bytes(*args)
-                        ),
-                        # LayoutSets
-                        layout_sets,
+        # Get the json of each layout set (if applicable), base path to the layout set, and path to layout files
+        layout_set_info = cast(
+            IterContainer[tuple[LayoutSetJson | None, str, str]],
+            (
+                # Multiple layout sets, read paths from layout-sets.json
+                IterContainer(layout_sets.json["sets"]).map(lambda set_json: (set_json, f"/App/ui/{set_json['id']}/"))
+                if layout_sets.json is not None
+                # Only one layout set, directly in /ui/
+                else IterContainer([(None, "/App/ui/")])
+            ).starmap(
+                lambda set_json, base_path: (
+                    # Multiple layout files, in /ui/(.+/)?layouts/
+                    (set_json, base_path, multi_path)
+                    if self.file_exists(multi_path := rf"{base_path}layouts/.+\.json$")
+                    else (
+                        # Single layout file, in /ui/FormLayout.json
+                        (set_json, base_path, single_path)
+                        if self.file_exists(single_path := rf"{base_path}FormLayout\.json$")
+                        # No layout files
+                        else None
                     )
                 )
             )
-        # layout-sets.json does not exist, we have at most one set
-        else:
-            layouts_path = (
-                multiple
-                if self.file_exists(multiple := rf"/App/ui/layouts/.+\.json$")
-                else single if self.file_exists(single := rf"/App/ui/FormLayout\.json$") else None
-            )
-            layout_sets.sets = (
-                IterContainer(
-                    [
-                        layout_set := LayoutSet(
-                            # JSON
-                            None,
-                            # Layouts
-                            self.files_matching(layouts_path)
-                            .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
-                            .filter(lambda layout: layout.exists),
-                            # LayoutSettings
-                            self.files_matching(r"/App/ui/Settings\.json$").map(
-                                lambda args: GenericJsonFile.from_bytes(*args)
-                            ),
-                            # RuleConfiguration
-                            self.files_matching(r"/App/ui/RuleConfiguration\.json$").map(
-                                lambda args: GenericJsonFile.from_bytes(*args)
-                            ),
-                            # RuleHandler
-                            self.files_matching(r"/App/ui/RuleHandler\.js$").map(
-                                lambda args: TextFile.from_bytes(*args)
-                            ),
-                            # LayoutSets
-                            layout_sets,
-                        )
-                    ]
-                    # We don't have any layout files, so there is no point looking at settings or anything else
+            # Ignore layout sets with no layout files
+            .filter(lambda values: values is not None),
+        )
+
+        layout_sets.sets = layout_set_info.starmap(
+            lambda set_json, base_path, layouts_path: (
+                layout_set := LayoutSet(
+                    set_json,
+                    # Layouts
+                    self.files_matching(layouts_path)
+                    .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
+                    .filter(lambda layout: layout.exists),
+                    # LayoutSettings
+                    self.files_matching(rf"{base_path}Settings\.json$").map(
+                        lambda args: GenericJsonFile.from_bytes(*args)
+                    ),
+                    # RuleConfiguration
+                    self.files_matching(rf"{base_path}RuleConfiguration\.json$").map(
+                        lambda args: GenericJsonFile.from_bytes(*args)
+                    ),
+                    # RuleHandler
+                    self.files_matching(rf"{base_path}RuleHandler\.js$").map(lambda args: TextFile.from_bytes(*args)),
+                    # LayoutSets
+                    layout_sets,
                 )
-                if layouts_path is not None
-                else IterContainer()
             )
+        )
 
         return layout_sets
 
