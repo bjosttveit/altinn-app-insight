@@ -135,9 +135,9 @@ class Version(str):
 
         if self.preview != other.preview:
             if self.preview is None:
-                return True
-            if other.preview is None:
                 return False
+            if other.preview is None:
+                return True
 
         return False
 
@@ -172,9 +172,9 @@ class Version(str):
 
         if self.preview != other.preview:
             if self.preview is None:
-                return False
-            if other.preview is None:
                 return True
+            if other.preview is None:
+                return False
 
         return False
 
