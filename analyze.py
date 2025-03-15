@@ -183,6 +183,22 @@ def main():
         #     ).select({"Frontend version": lambda app: app.frontend_version})
         # )
 
+        # print(
+        #     apps.where(lambda app: app.env == "prod")
+        #     .select(
+        #         {
+        #             "Rule config": lambda app: app.rule_configurations.flat_map(
+        #                 lambda rule_configuration: rule_configuration[
+        #                     ".data.conditionalRendering.[].selectedFunction", :
+        #                 ]
+        #                 .map(lambda func_name: rule_configuration.layout_set.rule_handler.conditional_rule(func_name))
+        #                 .filter(lambda func: func != None)
+        #             ),
+        #         }
+        #     )
+        #     .where(lambda app: len(app["Rule config"]) > 0)
+        # )
+
         print()
         print(f"Time: {time() - start:.2f}s")
 

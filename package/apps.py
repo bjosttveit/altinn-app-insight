@@ -4,17 +4,21 @@ from typing import TYPE_CHECKING, overload
 
 from numpy.typing import ArrayLike
 
+
 from .iter import IterContainer, IterController
 from .json import (
     AppsettingsJsonFile,
-    Component,
     GenericJsonFile,
+)
+from .layout_sets import (
+    Component,
     Layout,
     LayoutSet,
     LayoutSetJson,
     LayoutSets,
     LayoutSettings,
     RuleConfiguration,
+    RuleHandler,
 )
 from .plotting import setup_plot
 from .repo import Environment, VersionLock
@@ -207,7 +211,9 @@ class App:
                         lambda args: RuleConfiguration.from_bytes(*args).set_layout_set(layout_set)
                     ),
                     # RuleHandler
-                    self.files_matching(rf"{base_path}RuleHandler\.js$").map(lambda args: TextFile.from_bytes(*args)),
+                    self.files_matching(rf"{base_path}RuleHandler\.js$").map(
+                        lambda args: RuleHandler.from_bytes(*args)
+                    ),
                     # LayoutSets
                     layout_sets,
                 )
@@ -237,7 +243,7 @@ class App:
         )
 
     @property
-    def rule_handlers(self) -> IterContainer[TextFile]:
+    def rule_handlers(self) -> IterContainer[RuleHandler]:
         return self.layout_sets.sets.map(lambda set: set.rule_handler).filter(lambda rule_handler: rule_handler.exists)
 
     @property

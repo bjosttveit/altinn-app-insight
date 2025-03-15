@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-from functools import cached_property
-from typing import Iterable, Literal, NotRequired, Self, TypedDict, TypeVar, cast, overload
+from typing import Iterable, Literal, cast, overload
 
 import re
 import pprint
 import jq
 import rapidjson
 
-from package.text import TextFile
 
 from .iter import IterContainer
 
-T = TypeVar("T", str, int, float, bool, None)
-type ExpressionOr[T] = T | tuple[str, *tuple[ExpressionOr, ...]]
 
-J = TypeVar("J")
-
-
-def parse(data: bytes | None):
+def parse_json(data: bytes | None):
     # Ignore empty JSON files
     if data is None or len(data) == 0:
         return None
@@ -95,7 +88,7 @@ class GenericJson[J]:
         return self.jq(query)[slice_key]
 
 
-class GenericJsonFile(GenericJson[J]):
+class GenericJsonFile[J](GenericJson[J]):
     def __init__(self, json: J | None, file_path: str | None):
         super().__init__(json)
         self.file_path = file_path
@@ -106,14 +99,14 @@ class GenericJsonFile(GenericJson[J]):
 
     @staticmethod
     def from_bytes(data: bytes | None, file_path: str | None):
-        return GenericJsonFile(parse(data), file_path)
+        return GenericJsonFile(parse_json(data), file_path)
 
     @property
     def schema(self):
         return self[".$schema"]
 
 
-class AppsettingsJsonFile(GenericJsonFile[J]):
+class AppsettingsJsonFile[J](GenericJsonFile[J]):
     type Environment = Literal["Production", "Development", "Staging", "default"]
 
     @staticmethod
@@ -134,167 +127,4 @@ class AppsettingsJsonFile(GenericJsonFile[J]):
 
     @staticmethod
     def from_bytes(data: bytes | None, file_path: str | None):
-        return AppsettingsJsonFile(parse(data), file_path)
-
-
-class ComponentJson(TypedDict):
-    """Can have additional properties"""
-
-    id: str
-    type: str
-    hidden: NotRequired[ExpressionOr[bool]]
-
-
-class LayoutDataJson(TypedDict):
-    hidden: NotRequired[ExpressionOr[bool]]
-    layout: list[ComponentJson]
-
-
-class LayoutJson(TypedDict):
-    data: LayoutDataJson
-
-
-class LayoutSetJson(TypedDict):
-    id: str
-    dataType: str
-    tasks: list[str] | None
-
-
-class LayoutSetsJson(TypedDict):
-    sets: list[LayoutSetJson]
-
-
-class Component(GenericJson[ComponentJson]):
-    def __init__(self, json: ComponentJson | None, layout: Layout):
-        super().__init__(json)
-        self.layout = layout
-
-    @property
-    def id(self):
-        if self.json is None:
-            return None
-        return self.json["id"]
-
-    @property
-    def type(self):
-        if self.json is None:
-            return None
-        return self.json["type"]
-
-
-class Layout(GenericJsonFile[LayoutJson]):
-    layout_set: LayoutSet
-
-    def __init__(self, json: LayoutJson | None, file_path: str | None):
-        super().__init__(json, file_path)
-        self.components = (
-            IterContainer(json["data"]["layout"]).map(lambda component_json: Component(component_json, self))
-            if json is not None
-            else IterContainer()
-        )
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return Layout(parse(data), file_path)
-
-    def set_layout_set(self, layout_set: LayoutSet) -> Self:
-        self.layout_set = layout_set
-        return self
-
-
-class LayoutSettings(GenericJsonFile):
-    def __init__(self, json: object | None, file_path: str | None):
-        super().__init__(json, file_path)
-
-    @staticmethod
-    def empty():
-        return LayoutSettings(None, None)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return LayoutSettings(parse(data), file_path)
-
-    def set_layout_set(self, layout_set: LayoutSet) -> Self:
-        self.layout_set = layout_set
-        return self
-
-
-class RuleConfiguration(GenericJsonFile):
-    def __init__(self, json: object | None, file_path: str | None):
-        super().__init__(json, file_path)
-
-    @staticmethod
-    def empty():
-        return RuleConfiguration(None, None)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return RuleConfiguration(parse(data), file_path)
-
-    def set_layout_set(self, layout_set: LayoutSet) -> Self:
-        self.layout_set = layout_set
-        return self
-
-
-class LayoutSet(GenericJson[LayoutSetJson]):
-    def __init__(
-        self,
-        json: LayoutSetJson | None,
-        layouts: IterContainer[Layout],
-        layout_settings: IterContainer[LayoutSettings],
-        rule_configuration: IterContainer[RuleConfiguration],
-        rule_handler: IterContainer[TextFile],
-        layout_sets: LayoutSets,
-    ):
-        super().__init__(json)
-        self.layouts = layouts
-        self.__layout_settings = layout_settings
-        self.__rule_configuration = rule_configuration
-        self.__rule_handler = rule_handler
-        self.layout_sets = layout_sets
-
-    # Lazy load by keeping it in an iterator until access
-    @cached_property
-    def layout_settings(self):
-        return self.__layout_settings.first_or_default(LayoutSettings.empty().set_layout_set(self))
-
-    @cached_property
-    def rule_configuration(self):
-        return self.__rule_configuration.first_or_default(RuleConfiguration.empty().set_layout_set(self))
-
-    @cached_property
-    def rule_handler(self):
-        return self.__rule_handler.first_or_default(TextFile.empty())
-
-    @property
-    def id(self):
-        if self.json is None:
-            return None
-        return self.json["id"]
-
-    @property
-    def data_type(self):
-        if self.json is None:
-            return None
-        return self.json["dataType"]
-
-    @property
-    def tasks(self):
-        if self.json is None:
-            return None
-        return self.json["tasks"]
-
-
-class LayoutSets(GenericJsonFile[LayoutSetsJson]):
-    sets: IterContainer[LayoutSet]
-
-    def __init__(self, json: LayoutSetsJson | None, file_path: str | None):
-        super().__init__(json, file_path)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return LayoutSets(parse(data), file_path)
-
-    @staticmethod
-    def empty():
-        return LayoutSets(None, None)
+        return AppsettingsJsonFile(parse_json(data), file_path)
