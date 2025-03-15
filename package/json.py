@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import Iterable, Literal, cast, overload
 
-import re
-import pprint
 import jq
 import rapidjson
-
+from IPython.display import Code as CodeDisplay
 
 from .iter import IterContainer
 
@@ -36,9 +36,10 @@ class GenericJson[J]:
         return self.json is not None
 
     def __repr__(self):
-        if isinstance(self.json, dict) or isinstance(self.json, list):
-            return pprint.pformat(self.json)
-        return str(self.json)
+        return json.dumps(self.json, indent=4)
+
+    def _repr_html_(self):
+        return CodeDisplay(json.dumps(self.json, indent=4), language="json")._repr_html_()
 
     def __eq__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Callable, TypeVarTuple, Unpack, overload
+from typing import TYPE_CHECKING, Callable, overload
+
+from .html import html
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -19,6 +21,9 @@ class IterContainer[T]:
 
     def __repr__(self):
         return "[" + ", ".join(map(lambda i: str(i), self.list)) + "]"
+
+    def _repr_html_(self):
+        return html(self.list)
 
     def with_iterable[R](self, iterable: Iterable[R]) -> IterContainer[R]:
         return IterContainer(iterable, self.executor)

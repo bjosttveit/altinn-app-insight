@@ -4,12 +4,10 @@ from typing import TYPE_CHECKING, overload
 
 from numpy.typing import ArrayLike
 
+from package.html import tabulate_html
 
 from .iter import IterContainer, IterController
-from .json import (
-    AppsettingsJsonFile,
-    GenericJsonFile,
-)
+from .json import AppsettingsJsonFile, GenericJsonFile
 from .layout_sets import (
     Component,
     Layout,
@@ -24,7 +22,6 @@ from .plotting import setup_plot
 from .repo import Environment, VersionLock
 from .text import TextFile
 from .version import Version
-
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -327,7 +324,7 @@ class Apps(IterController[App]):
 
         headers = ["Env", "Org", "App", *self.list[0].data_keys]
         data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
-        table = tabulate(data, headers=headers, tablefmt="html")
+        table = tabulate_html(data, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
 
@@ -491,7 +488,7 @@ class GroupedApps(IterController[Apps]):
 
         headers = [*self.list[0].group_keys, *self.list[0].data_keys]
         data = [[*group.group_values, *group.data_values] for group in self.list]
-        table = tabulate(data, headers=headers, tablefmt="html")
+        table = tabulate_html(data, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
 

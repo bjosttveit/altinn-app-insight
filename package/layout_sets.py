@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 from functools import cached_property
-from typing import NotRequired, Self, TypedDict, TypeVar, cast
+from typing import NotRequired, Self, TypedDict, TypeVar
+
 import tree_sitter_javascript as ts_js
 from tree_sitter import Language, Parser, Tree
 
+from package.code import Code, Js
 from package.json import GenericJson, GenericJsonFile, parse_json
-
 
 from .iter import IterContainer
 
@@ -150,15 +152,15 @@ class RuleHandler:
             return self.tree.root_node.text.decode()
         return str(None)
 
-    def __find(self, query: str) -> str | None:
+    def __find(self, query: str) -> Code[Js] | None:
         if self.tree is None:
             return None
         matches = JS_LANGUAGE.query(query).captures(self.tree.root_node).get("output")
         if matches is None or len(matches) == 0 or matches[0].text is None:
             return None
-        return matches[0].text.decode()
+        return Code.js(matches[0].text, self.file_path)
 
-    def __iter(self, query: str) -> IterContainer[str]:
+    def __iter(self, query: str) -> IterContainer[Code[Js]]:
         if self.tree is None:
             return IterContainer()
         matches = JS_LANGUAGE.query(query).captures(self.tree.root_node).get("output")
@@ -167,10 +169,10 @@ class RuleHandler:
         return (
             IterContainer(matches)
             .filter(lambda match: match.text is not None)
-            .map(lambda match: cast(bytes, match.text).decode())
+            .map(lambda match: Code.js(match.text, self.file_path))
         )
 
-    def __find_in_object_declaration(self, variable_name: str, propery_name: str) -> str | None:
+    def __find_in_object_declaration(self, variable_name: str, propery_name: str) -> Code[Js] | None:
         return self.__find(
             f"""
             (variable_declaration
@@ -185,7 +187,7 @@ class RuleHandler:
             """
         )
 
-    def __iter_object_declaration(self, variable_name: str) -> IterContainer[str]:
+    def __iter_object_declaration(self, variable_name: str) -> IterContainer[Code[Js]]:
         return self.__iter(
             f"""
             (variable_declaration
@@ -199,28 +201,36 @@ class RuleHandler:
             """
         )
 
-    def rule(self, name: str | GenericJson) -> str | None:
+    def rule(self, name: str | GenericJson | None) -> Code[Js] | None:
+        if name is None:
+            return None
         return self.__find_in_object_declaration("ruleHandlerObject", str(name))
 
-    def rule_helper(self, name: str | GenericJson) -> str | None:
+    def rule_helper(self, name: str | GenericJson | None) -> Code[Js] | None:
+        if name is None:
+            return None
         return self.__find_in_object_declaration("ruleHandlerHelper", str(name))
 
-    def conditional_rule(self, name: str | GenericJson) -> str | None:
+    def conditional_rule(self, name: str | GenericJson | None) -> Code[Js] | None:
+        if name is None:
+            return None
         return self.__find_in_object_declaration("conditionalRuleHandlerObject", str(name))
 
-    def conditional_rule_helper(self, name: str | GenericJson) -> str | None:
+    def conditional_rule_helper(self, name: str | GenericJson | None) -> Code[Js] | None:
+        if name is None:
+            return None
         return self.__find_in_object_declaration("conditionalRuleHandlerHelper", str(name))
 
-    def rules(self) -> IterContainer[str]:
+    def rules(self) -> IterContainer[Code[Js]]:
         return self.__iter_object_declaration("ruleHandlerObject")
 
-    def rule_helpers(self) -> IterContainer[str]:
+    def rule_helpers(self) -> IterContainer[Code[Js]]:
         return self.__iter_object_declaration("ruleHandlerHelper")
 
-    def conditional_rules(self) -> IterContainer[str]:
+    def conditional_rules(self) -> IterContainer[Code[Js]]:
         return self.__iter_object_declaration("conditionalRuleHandlerObject")
 
-    def conditional_rule_helpers(self) -> IterContainer[str]:
+    def conditional_rule_helpers(self) -> IterContainer[Code[Js]]:
         return self.__iter_object_declaration("conditionalRuleHandlerHelper")
 
 
