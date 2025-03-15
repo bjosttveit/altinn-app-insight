@@ -212,7 +212,7 @@ class App:
                     ),
                     # RuleHandler
                     self.files_matching(rf"{base_path}RuleHandler\.js$").map(
-                        lambda args: RuleHandler.from_bytes(*args)
+                        lambda args: RuleHandler.from_bytes(*args).set_layout_set(layout_set)
                     ),
                     # LayoutSets
                     layout_sets,

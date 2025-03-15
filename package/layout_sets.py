@@ -79,6 +79,8 @@ class Layout(GenericJsonFile[LayoutJson]):
 
 
 class LayoutSettings(GenericJsonFile):
+    layout_set: LayoutSet
+
     def __init__(self, json: object | None, file_path: str | None):
         super().__init__(json, file_path)
 
@@ -96,6 +98,8 @@ class LayoutSettings(GenericJsonFile):
 
 
 class RuleConfiguration(GenericJsonFile):
+    layout_set: LayoutSet
+
     def __init__(self, json: object | None, file_path: str | None):
         super().__init__(json, file_path)
 
@@ -117,6 +121,8 @@ js_parser = Parser(JS_LANGUAGE)
 
 
 class RuleHandler:
+    layout_set: LayoutSet
+
     def __init__(self, tree: Tree | None, file_path: str | None):
         self.tree = tree
         self.file_path = file_path
@@ -130,6 +136,10 @@ class RuleHandler:
         if data is None or len(data) == 0:
             return RuleHandler(None, file_path)
         return RuleHandler(js_parser.parse(data), file_path)
+
+    def set_layout_set(self, layout_set: LayoutSet) -> Self:
+        self.layout_set = layout_set
+        return self
 
     @property
     def exists(self):
@@ -160,20 +170,6 @@ class RuleHandler:
             .map(lambda match: cast(bytes, match.text).decode())
         )
 
-    def __iter_object_declaration(self, variable_name: str) -> IterContainer[str]:
-        return self.__iter(
-            f"""
-            (variable_declaration
-                (variable_declarator 
-                    name: (identifier) @variable.name
-                    value: (object
-                        (pair
-                            key: (property_identifier) @prop.name
-                            value: (_)) @output)
-                    (#eq? @variable.name "{variable_name}")))
-            """
-        )
-
     def __find_in_object_declaration(self, variable_name: str, propery_name: str) -> str | None:
         return self.__find(
             f"""
@@ -185,6 +181,20 @@ class RuleHandler:
                             key: (property_identifier) @prop.name
                             value: (_)
                             (#eq? @prop.name "{propery_name}")) @output)
+                    (#eq? @variable.name "{variable_name}")))
+            """
+        )
+
+    def __iter_object_declaration(self, variable_name: str) -> IterContainer[str]:
+        return self.__iter(
+            f"""
+            (variable_declaration
+                (variable_declarator 
+                    name: (identifier) @variable.name
+                    value: (object
+                        (pair
+                            key: (property_identifier) @prop.name
+                            value: (_)) @output)
                     (#eq? @variable.name "{variable_name}")))
             """
         )
@@ -242,7 +252,7 @@ class LayoutSet(GenericJson[LayoutSetJson]):
 
     @cached_property
     def rule_handler(self):
-        return self.__rule_handler.first_or_default(RuleHandler.empty())
+        return self.__rule_handler.first_or_default(RuleHandler.empty().set_layout_set(self))
 
     @property
     def id(self):
