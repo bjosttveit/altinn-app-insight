@@ -36,7 +36,9 @@ class GenericJson[J]:
         return self.json is not None
 
     def __repr__(self):
-        return json.dumps(self.json, indent=4)
+        if isinstance(self.json, dict) or isinstance(self.json, list):
+            return json.dumps(self.json, indent=4)
+        return str(self.json)
 
     def _repr_html_(self):
         return CodeDisplay(json.dumps(self.json, indent=4), language="json")._repr_html_()
@@ -72,9 +74,7 @@ class GenericJson[J]:
     def jq(self, query: str) -> IterContainer[GenericJson[object]]:
         if not self.exists:
             return IterContainer()
-        iterable: Iterable[object] = iter(jq.compile(query).input_value(self.json))
-        json_iterable = map(lambda json: GenericJson(json), iterable)
-        return IterContainer(json_iterable)
+        return IterContainer(iter(jq.compile(query).input_value(self.json))).map(lambda json: GenericJson(json))
 
     @overload
     def __getitem__(self, key: str) -> GenericJson[object] | None: ...
