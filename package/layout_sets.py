@@ -158,7 +158,7 @@ class RuleHandler:
         matches = JS_LANGUAGE.query(query).captures(self.tree.root_node).get("output")
         if matches is None or len(matches) == 0 or matches[0].text is None:
             return None
-        return Code.js(matches[0].text, self.file_path)
+        return Code.js(matches[0].text, self.file_path, matches[0].start_point.row + 1)
 
     def __iter(self, query: str) -> IterContainer[Code[Js]]:
         if self.tree is None:
@@ -169,7 +169,7 @@ class RuleHandler:
         return (
             IterContainer(matches)
             .filter(lambda match: match.text is not None)
-            .map(lambda match: Code.js(match.text, self.file_path))
+            .map(lambda match: Code.js(match.text, self.file_path, match.start_point.row + 1))
         )
 
     def __find_in_object_declaration(self, variable_name: str, propery_name: str) -> Code[Js] | None:
@@ -201,25 +201,25 @@ class RuleHandler:
             """
         )
 
-    def rule(self, name: str | GenericJson | None) -> Code[Js] | None:
-        if name is None:
+    def rule(self, _name: str | GenericJson | None) -> Code[Js] | None:
+        if (name := GenericJson.to_string(_name)) is None:
             return None
-        return self.__find_in_object_declaration("ruleHandlerObject", str(name))
+        return self.__find_in_object_declaration("ruleHandlerObject", name)
 
-    def rule_helper(self, name: str | GenericJson | None) -> Code[Js] | None:
-        if name is None:
+    def rule_helper(self, _name: str | GenericJson | None) -> Code[Js] | None:
+        if (name := GenericJson.to_string(_name)) is None:
             return None
-        return self.__find_in_object_declaration("ruleHandlerHelper", str(name))
+        return self.__find_in_object_declaration("ruleHandlerHelper", name)
 
-    def conditional_rule(self, name: str | GenericJson | None) -> Code[Js] | None:
-        if name is None:
+    def conditional_rule(self, _name: str | GenericJson | None) -> Code[Js] | None:
+        if (name := GenericJson.to_string(_name)) is None:
             return None
-        return self.__find_in_object_declaration("conditionalRuleHandlerObject", str(name))
+        return self.__find_in_object_declaration("conditionalRuleHandlerObject", name)
 
-    def conditional_rule_helper(self, name: str | GenericJson | None) -> Code[Js] | None:
-        if name is None:
+    def conditional_rule_helper(self, _name: str | GenericJson | None) -> Code[Js] | None:
+        if (name := GenericJson.to_string(_name)) is None:
             return None
-        return self.__find_in_object_declaration("conditionalRuleHandlerHelper", str(name))
+        return self.__find_in_object_declaration("conditionalRuleHandlerHelper", name)
 
     def rules(self) -> IterContainer[Code[Js]]:
         return self.__iter_object_declaration("ruleHandlerObject")

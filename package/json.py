@@ -43,6 +43,15 @@ class GenericJson[J]:
     def _repr_html_(self):
         return CodeDisplay(json.dumps(self.json, indent=4), language="json")._repr_html_()
 
+    @staticmethod
+    def to_string(value: str | GenericJson | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value.json, str):
+            return value.json
+
     def __eq__(self, other: object | GenericJson):
         other_json = other.json if isinstance(other, GenericJson) else other
         return self.json == other_json

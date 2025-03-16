@@ -46,6 +46,10 @@ def tabulate_html(_data: Iterable[Iterable[object]], headers: list[str]) -> Jupy
             .{className} td {{
                 vertical-align: top !important;
             }}
+            .{className} .linenos {{
+                user-select: none;
+                margin-right: 4px;
+            }}
         </style>
         <div class="{className}">
         """
