@@ -25,3 +25,7 @@ run-debug: build
 .PHONY: format
 format:
 	uvx black .
+
+.PHONY: clear
+clear:
+	uv run jupyter nbconvert --clear-output ./notebooks/*.ipynb
