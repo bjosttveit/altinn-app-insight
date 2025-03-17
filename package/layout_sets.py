@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from functools import cached_property
-from typing import NotRequired, Self, TypedDict, TypeVar
+from functools import cache, cached_property
+from typing import NotRequired, Self, TypedDict, TypeVar, Unpack
 
 import tree_sitter_javascript as ts_js
 from tree_sitter import Language, Parser, Tree
@@ -122,6 +122,10 @@ JS_LANGUAGE = Language(ts_js.language())
 js_parser = Parser(JS_LANGUAGE)
 
 
+class RuleArgs(TypedDict):
+    name: NotRequired[str | GenericJson | None]
+
+
 class RuleHandler:
     layout_set: LayoutSet
 
@@ -152,86 +156,65 @@ class RuleHandler:
             return self.tree.root_node.text.decode()
         return str(None)
 
-    def __find(self, query: str) -> Code[Js] | None:
-        if self.tree is None:
-            return None
-        matches = JS_LANGUAGE.query(query).captures(self.tree.root_node).get("output")
-        if matches is None or len(matches) == 0 or matches[0].text is None:
-            return None
-        return Code.js(matches[0].text, self.file_path, matches[0].start_point.row + 1)
+    def _repr_html_(self) -> str:
+        return Code.js(self.tree.root_node.text if self.tree is not None else None, self.file_path, 1)._repr_html_()
 
-    def __iter(self, query: str) -> IterContainer[Code[Js]]:
+    @cache
+    def find_all(self, query: str) -> list[Code[Js]]:
         if self.tree is None:
-            return IterContainer()
+            return []
         matches = JS_LANGUAGE.query(query).captures(self.tree.root_node).get("output")
         if matches is None or len(matches) == 0:
-            return IterContainer()
+            return []
         return (
             IterContainer(matches)
             .filter(lambda match: match.text is not None)
             .map(lambda match: Code.js(match.text, self.file_path, match.start_point.row + 1))
+        ).list
+
+    def object_declarations(self, variable_name: str | None = None, propery_name: str | None = None):
+        variable_name_restriction = f'(#eq? @variable.name "{variable_name}")' if variable_name is not None else ""
+        propery_name_restriction = f'(#eq? @prop.name "{propery_name}")' if propery_name is not None else ""
+
+        return IterContainer(
+            self.find_all(
+                f"""
+                (variable_declaration
+                    (variable_declarator 
+                        name: (identifier) @variable.name
+                        {variable_name_restriction}
+                        value: (object
+                            (pair
+                                key: (property_identifier) @prop.name
+                                {propery_name_restriction}
+                                value: (_)) @output)))
+                """
+            )
         )
 
-    def __find_in_object_declaration(self, variable_name: str, propery_name: str) -> Code[Js] | None:
-        return self.__find(
-            f"""
-            (variable_declaration
-                (variable_declarator 
-                    name: (identifier) @variable.name
-                    value: (object
-                        (pair
-                            key: (property_identifier) @prop.name
-                            value: (_)
-                            (#eq? @prop.name "{propery_name}")) @output)
-                    (#eq? @variable.name "{variable_name}")))
-            """
-        )
+    def rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+        name = None
+        if "name" in kwargs and (name := GenericJson.to_string(kwargs["name"])) is None:
+            return IterContainer()
+        return self.object_declarations("ruleHandlerObject", name)
 
-    def __iter_object_declaration(self, variable_name: str) -> IterContainer[Code[Js]]:
-        return self.__iter(
-            f"""
-            (variable_declaration
-                (variable_declarator 
-                    name: (identifier) @variable.name
-                    value: (object
-                        (pair
-                            key: (property_identifier) @prop.name
-                            value: (_)) @output)
-                    (#eq? @variable.name "{variable_name}")))
-            """
-        )
+    def rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+        name = None
+        if "name" in kwargs and (name := GenericJson.to_string(kwargs["name"])) is None:
+            return IterContainer()
+        return self.object_declarations("ruleHandlerHelper", name)
 
-    def rule(self, _name: str | GenericJson | None) -> Code[Js] | None:
-        if (name := GenericJson.to_string(_name)) is None:
-            return None
-        return self.__find_in_object_declaration("ruleHandlerObject", name)
+    def conditional_rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+        name = None
+        if "name" in kwargs and (name := GenericJson.to_string(kwargs["name"])) is None:
+            return IterContainer()
+        return self.object_declarations("conditionalRuleHandlerObject", name)
 
-    def rule_helper(self, _name: str | GenericJson | None) -> Code[Js] | None:
-        if (name := GenericJson.to_string(_name)) is None:
-            return None
-        return self.__find_in_object_declaration("ruleHandlerHelper", name)
-
-    def conditional_rule(self, _name: str | GenericJson | None) -> Code[Js] | None:
-        if (name := GenericJson.to_string(_name)) is None:
-            return None
-        return self.__find_in_object_declaration("conditionalRuleHandlerObject", name)
-
-    def conditional_rule_helper(self, _name: str | GenericJson | None) -> Code[Js] | None:
-        if (name := GenericJson.to_string(_name)) is None:
-            return None
-        return self.__find_in_object_declaration("conditionalRuleHandlerHelper", name)
-
-    def rules(self) -> IterContainer[Code[Js]]:
-        return self.__iter_object_declaration("ruleHandlerObject")
-
-    def rule_helpers(self) -> IterContainer[Code[Js]]:
-        return self.__iter_object_declaration("ruleHandlerHelper")
-
-    def conditional_rules(self) -> IterContainer[Code[Js]]:
-        return self.__iter_object_declaration("conditionalRuleHandlerObject")
-
-    def conditional_rule_helpers(self) -> IterContainer[Code[Js]]:
-        return self.__iter_object_declaration("conditionalRuleHandlerHelper")
+    def conditional_rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+        name = None
+        if "name" in kwargs and (name := GenericJson.to_string(kwargs["name"])) is None:
+            return IterContainer()
+        return self.object_declarations("conditionalRuleHandlerHelper", name)
 
 
 class LayoutSet(GenericJson[LayoutSetJson]):

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, overload
 
 from numpy.typing import ArrayLike
 
+from package.cs import CsFile, ProgramCs
 from package.html import tabulate_html
 
 from .iter import IterContainer, IterController
@@ -252,19 +253,19 @@ class App:
         )
 
     @property
-    def cs(self) -> IterContainer[TextFile]:
+    def cs(self) -> IterContainer[CsFile]:
         return (
             self.files_matching(r"/App/.*\.cs$")
-            .map(lambda args: TextFile.from_bytes(*args))
+            .map(lambda args: CsFile.from_bytes(*args))
             .filter(lambda file: file.exists)
         )
 
-    @property
+    @cached_property
     def program_cs(self):
         return (
             self.files_matching(r"/App/Program.cs$")
-            .map(lambda args: TextFile.from_bytes(*args))
-            .first_or_default(TextFile.empty())
+            .map(lambda args: ProgramCs.from_bytes(*args))
+            .first_or_default(ProgramCs.empty())
         )
 
     @cached_property
