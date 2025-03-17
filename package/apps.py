@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
@@ -81,7 +81,7 @@ class App:
     def data_values(self) -> list[object]:
         return list(self.data.values())
 
-    def __getitem__(self, key: str) -> object:
+    def __getitem__(self, key: str) -> Any:
         return self.data[key]
 
     # Uses a context manager to make sure any file operations are closed
@@ -375,7 +375,7 @@ class Apps(IterController[App]):
         return [func(self) for func in self.selector.values()]
 
     @overload
-    def __getitem__(self, key: str) -> object: ...
+    def __getitem__(self, key: str) -> Any: ...
     @overload
     def __getitem__(self, key: int) -> App: ...
     @overload
