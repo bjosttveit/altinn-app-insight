@@ -28,4 +28,4 @@ format:
 
 .PHONY: clear
 clear:
-	uv run jupyter nbconvert --clear-output ./notebooks/*.ipynb
+	uv run clear_state.py
