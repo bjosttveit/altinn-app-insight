@@ -426,27 +426,14 @@ class GroupedApps(IterController[Apps]):
             return []
 
         if type(X) == str:
-            return (
-                [str(group.groupings[X]) for group in self.list]
-                if X in self.list[0].group_keys
-                else [str(group.data_values[group.data_keys.index(X)]) for group in self.list]
-            )
+            return [str(group[X]) for group in self.list]
+
         columns: list[tuple[str, ...]]
         if type(X) == tuple:
-            columns = [
-                tuple(
-                    (
-                        str(group.groupings[x])
-                        if x in self.list[0].group_keys
-                        else str(group.data_values[group.data_keys.index(x)])
-                    )
-                    for x in X
-                )
-                for group in self.list
-            ]
+            columns = [tuple(str(group[x]) for x in X) for group in self.list]
         else:
             columns = [
-                tuple([*(str(value) for value in group.group_values), *(str(value) for value in group.data_values)])
+                tuple([str(value) for value in group.group_values] + [str(value) for value in group.data_values])
                 for group in self.list
             ]
 
@@ -459,14 +446,7 @@ class GroupedApps(IterController[Apps]):
         if y is None:
             return [group.length for group in self.list]
 
-        return cast(
-            ArrayLike,
-            (
-                [group.groupings[y] for group in self.list]
-                if y in self.list[0].group_keys
-                else [group.data_values[group.data_keys.index(y)] for group in self.list]
-            ),
-        )
+        return [group[y] for group in self.list]
 
     def pie(self, title: str | None = None, x: str | tuple[str] | None = None, y: str | None = None):
         labels = self.__get_chart_labels(x)
