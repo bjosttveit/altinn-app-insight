@@ -1,3 +1,4 @@
+from __future__ import annotations
 from functools import cache
 from typing import NotRequired, TypedDict, Unpack, cast
 import tree_sitter_c_sharp as ts_cs
@@ -15,44 +16,17 @@ class ClassArgs(TypedDict):
     implements: NotRequired[str | None]
 
 
-class CsFile:
-    def __init__(self, data: bytes | None, file_path: str | None):
-        self.data = data
-        self.file_path = file_path
-
-    @staticmethod
-    def empty():
-        return CsFile(None, None)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        if data is None or len(data) == 0:
-            return CsFile(None, file_path)
-        return CsFile(data, file_path)
+class CsCode(Code[Cs]):
+    def __init__(self, content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1):
+        super().__init__("cs", content, file_path, start_line)
 
     def root_node(self):
-        if self.data is None:
+        if self.bytes is None:
             return None
-        return cs_parser.parse(self.data).root_node
-
-    @property
-    def text(self):
-        if self.data is None:
-            return None
-        return self.data.decode(errors="ignore")
-
-    @property
-    def exists(self):
-        return self.data is not None
-
-    def __repr__(self):
-        return str(self.text)
-
-    def _repr_html_(self) -> str:
-        return Code.cs(self.text, self.file_path, 1)._repr_html_()
+        return cs_parser.parse(self.bytes).root_node
 
     @cache
-    def find_all(self, query: str) -> list[Code[Cs]]:
+    def query(self, query: str) -> list[CsCode]:
         root_node = self.root_node()
         if root_node is None:
             return []
@@ -62,10 +36,10 @@ class CsFile:
         return (
             IterContainer(matches)
             .filter(lambda match: match.text is not None)
-            .map(lambda match: Code.cs(match.text, self.file_path, match.start_point.row + 1))
+            .map(lambda match: CsCode(match.text, self.file_path, match.start_point.row + 1))
         ).list
 
-    def class_declarations(self, **kwargs: Unpack[ClassArgs]) -> IterContainer[Code[Cs]]:
+    def class_declarations(self, **kwargs: Unpack[ClassArgs]) -> IterContainer[CsCode]:
         name, implements = None, None
         if "name" in kwargs and (name := kwargs["name"]) is None:
             return IterContainer()
@@ -84,7 +58,7 @@ class CsFile:
         )
 
         return IterContainer(
-            self.find_all(
+            self.query(
                 f"""
                 (class_declaration
                     name: (identifier) @class.name
@@ -99,19 +73,9 @@ class AppServiceArgs(TypedDict):
     interface_name: NotRequired[str | None]
 
 
-class ProgramCs(CsFile):
-    def __init__(self, data: bytes | None, file_path: str | None):
-        super().__init__(data, file_path)
-
-    @staticmethod
-    def empty():
-        return ProgramCs(None, None)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        if data is None or len(data) == 0:
-            return ProgramCs(None, file_path)
-        return ProgramCs(data, file_path)
+class ProgramCs(CsCode):
+    def __init__(self, content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1):
+        super().__init__(content, file_path, start_line)
 
     def custom_app_services(self, **kwargs: Unpack[AppServiceArgs]) -> IterContainer[str]:
         interface_name = None
@@ -126,7 +90,7 @@ class ProgramCs(CsFile):
         # services.Add.*<interface_name, .*>(.*);
         # where "services" matches the argument of type IServiceCollection
         # and "interface_name" matches the kwarg if specified
-        matches = self.find_all(
+        matches = self.query(
             f"""
             (local_function_statement
                 name: (identifier) @register_func.name

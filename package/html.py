@@ -7,7 +7,9 @@ from tabulate import JupyterHTMLStr, tabulate
 
 
 def is_html(obj: object):
-    return callable(getattr(obj, "_repr_html_", None))
+    return callable(getattr(obj, "_repr_html_", None)) and not (
+        callable(getattr(obj, "_repr_inline_", None)) and obj._repr_inline_()  # type: ignore
+    )
 
 
 def contains_html(seq: list | tuple):

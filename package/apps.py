@@ -4,11 +4,12 @@ from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
-from package.cs import CsFile, ProgramCs
+from package.code import Code, Html, Xml
+from package.cs import CsCode, ProgramCs
 from package.html import tabulate_html
 
 from .iter import IterContainer, IterController
-from .json import AppsettingsJsonFile, GenericJsonFile
+from .json import Appsettings, Json
 from .layout_sets import (
     Component,
     Layout,
@@ -21,7 +22,6 @@ from .layout_sets import (
 )
 from .plotting import setup_plot
 from .repo import Environment, VersionLock
-from .text import TextFile
 from .version import Version
 
 if TYPE_CHECKING:
@@ -150,19 +150,19 @@ class App:
         )
 
     @cached_property
-    def application_metadata(self):
+    def application_metadata(self) -> Json:
         return (
             self.files_matching(r"/App/config/applicationmetadata.json$")
-            .map(lambda args: GenericJsonFile.from_bytes(*args))
-            .first_or_default(GenericJsonFile.empty())
+            .map(lambda args: Json(*args))
+            .first_or_default(Json())
         )
 
     @property
-    def layout_sets(self):
+    def layout_sets(self) -> LayoutSets:
         layout_sets = (
             self.files_matching(r"/App/ui/layout-sets.json$")
-            .map(lambda args: LayoutSets.from_bytes(*args))
-            .first_or_default(LayoutSets.empty())
+            .map(lambda args: LayoutSets(*args))
+            .first_or_default(LayoutSets())
         )
 
         # Get the json of each layout set (if applicable), base path to the layout set, and path to layout files
@@ -198,19 +198,19 @@ class App:
                     set_json,
                     # Layouts
                     self.files_matching(layouts_path)
-                    .map(lambda args: Layout.from_bytes(*args).set_layout_set(layout_set))
+                    .map(lambda args: Layout(*args).set_layout_set(layout_set))
                     .filter(lambda layout: layout.exists),
                     # LayoutSettings
                     self.files_matching(rf"{base_path}Settings\.json$").map(
-                        lambda args: LayoutSettings.from_bytes(*args).set_layout_set(layout_set)
+                        lambda args: LayoutSettings(*args).set_layout_set(layout_set)
                     ),
                     # RuleConfiguration
                     self.files_matching(rf"{base_path}RuleConfiguration\.json$").map(
-                        lambda args: RuleConfiguration.from_bytes(*args).set_layout_set(layout_set)
+                        lambda args: RuleConfiguration(*args).set_layout_set(layout_set)
                     ),
                     # RuleHandler
                     self.files_matching(rf"{base_path}RuleHandler\.js$").map(
-                        lambda args: RuleHandler.from_bytes(*args).set_layout_set(layout_set)
+                        lambda args: RuleHandler(*args).set_layout_set(layout_set)
                     ),
                     # LayoutSets
                     layout_sets,
@@ -245,36 +245,41 @@ class App:
         return self.layout_sets.sets.map(lambda set: set.rule_handler).filter(lambda rule_handler: rule_handler.exists)
 
     @property
-    def app_settings(self) -> IterContainer[AppsettingsJsonFile]:
+    def app_settings(self) -> IterContainer[Appsettings]:
         return (
             self.files_matching(r"/App/appsettings(\.[^.]+)?\.json$")
-            .map(lambda args: AppsettingsJsonFile.from_bytes(*args))
+            .map(lambda args: Appsettings(*args))
             .filter(lambda file: file.exists)
         )
 
     @property
-    def cs(self) -> IterContainer[CsFile]:
-        return (
-            self.files_matching(r"/App/.*\.cs$")
-            .map(lambda args: CsFile.from_bytes(*args))
-            .filter(lambda file: file.exists)
-        )
+    def cs(self) -> IterContainer[CsCode]:
+        return self.files_matching(r"/App/.*\.cs$").map(lambda args: CsCode(*args)).filter(lambda file: file.exists)
 
     @cached_property
-    def program_cs(self):
+    def program_cs(self) -> ProgramCs:
+        return self.files_matching(r"/App/Program.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
+
+    @cached_property
+    def index_cshtml(self) -> Code[Html]:
         return (
-            self.files_matching(r"/App/Program.cs$")
-            .map(lambda args: ProgramCs.from_bytes(*args))
-            .first_or_default(ProgramCs.empty())
+            self.files_matching(r"/App/views/Home/Index.cshtml$")
+            .map(lambda args: Code.html(*args))
+            .first_or_default(Code.html())
+        )
+
+    @property
+    def csproj(self) -> IterContainer[Code[Xml]]:
+        return (
+            self.files_matching(r"/App/[^/]+.csproj$")
+            .map(lambda args: Code.xml(*args))
+            .filter(lambda file: file.exists)
         )
 
     @cached_property
     def frontend_version(self) -> Version:
         return Version(
-            self.files_matching(r"/App/views/Home/Index.cshtml$")
-            .map(lambda args: TextFile.from_bytes(*args))
-            .first_or_default(TextFile.empty())
-            .find(
+            self.index_cshtml.find(
                 r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"', 1
             )
         )
@@ -282,15 +287,11 @@ class App:
     @cached_property
     def backend_version(self) -> Version:
         return Version(
-            self.files_matching(r"/App/[^/]+.csproj$")
-            .map(lambda args: TextFile.from_bytes(*args))
-            .map(
-                lambda file: file.find(
+            self.csproj.flat_map(
+                lambda file: file.find_all(
                     r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3
                 )
-            )
-            .filter(lambda version_string: version_string is not None)
-            .first
+            ).first
         )
 
 

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Iterable, Literal, cast, overload
+from typing import Literal, cast, overload
+
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
 
 import jq
 import rapidjson
-from IPython.display import Code as CodeDisplay
 
 from .iter import IterContainer
 
@@ -27,24 +30,36 @@ def parse_json(data: bytes | None):
         pass
 
 
-class GenericJson[J]:
-    def __init__(self, json: J | None):
-        self.json = json
+class Json[J = object]:
+    def __init__(self, json: bytes | J | None = None, file_path: str | None = None):
+        if isinstance(json, bytes):
+            self.json = cast(J, parse_json(json))
+        else:
+            self.json = cast(J | None, json)
+        self.file_path = file_path
 
     @property
     def exists(self):
         return self.json is not None
 
     def __repr__(self):
-        if isinstance(self.json, dict) or isinstance(self.json, list):
-            return json.dumps(self.json, indent=4)
-        return str(self.json)
+        if self._repr_inline_():
+            return str(self.json)
+        return json.dumps(self.json, indent=4)
+
+    def _repr_inline_(self) -> bool:
+        return not (isinstance(self.json, list) or isinstance(self.json, dict))
 
     def _repr_html_(self):
-        return CodeDisplay(json.dumps(self.json, indent=4), language="json")._repr_html_()
+        lexer = get_lexer_by_name("json")
+        title_settings = {"filename": self.file_path} if self.file_path is not None else {}
+        settings = {"wrapcode": True, **title_settings}
+        fmt = HtmlFormatter(**settings)
+        style = "<style>{}</style>".format(fmt.get_style_defs(".output_html"))
+        return style + highlight(json.dumps(self.json, indent=4), lexer, fmt)
 
     @staticmethod
-    def to_string(value: str | GenericJson | None) -> str | None:
+    def to_string(value: str | Json | None) -> str | None:
         if value is None:
             return None
         if isinstance(value, str):
@@ -52,45 +67,47 @@ class GenericJson[J]:
         if isinstance(value.json, str):
             return value.json
 
-    def __eq__(self, other: object | GenericJson):
-        other_json = other.json if isinstance(other, GenericJson) else other
+    def __eq__(self, other: object | Json):
+        other_json = other.json if isinstance(other, Json) else other
         return self.json == other_json
 
-    def __gt__(self, other: object | GenericJson):
-        other_json = other.json if isinstance(other, GenericJson) else other
+    def __gt__(self, other: object | Json):
+        other_json = other.json if isinstance(other, Json) else other
         if not self.exists or other_json is None:
             return False
         return self.json > other_json  # type: ignore
 
-    def __lt__(self, other: object | GenericJson):
-        other_json = other.json if isinstance(other, GenericJson) else other
+    def __lt__(self, other: object | Json):
+        other_json = other.json if isinstance(other, Json) else other
         if not self.exists or other_json is None:
             return False
         return self.json < other_json  # type: ignore
 
-    def __gte__(self, other: object | GenericJson):
-        other_json = other.json if isinstance(other, GenericJson) else other
+    def __gte__(self, other: object | Json):
+        other_json = other.json if isinstance(other, Json) else other
         if not self.exists or other_json is None:
             return False
         return self.json >= other_json  # type: ignore
 
-    def __lte__(self, other: object | GenericJson):
-        other_json = other.json if isinstance(other, GenericJson) else other
+    def __lte__(self, other: object | Json):
+        other_json = other.json if isinstance(other, Json) else other
         if not self.exists or other_json is None:
             return False
         return self.json <= other_json  # type: ignore
 
-    def jq(self, query: str) -> IterContainer[GenericJson[object]]:
+    def jq(self, query: str) -> IterContainer[Json]:
         if not self.exists:
             return IterContainer()
-        return IterContainer(iter(jq.compile(query).input_value(self.json))).map(lambda json: GenericJson(json))
+        return IterContainer(iter(jq.compile(query).input_value(self.json))).map(
+            lambda json: Json(json, self.file_path)
+        )
 
     @overload
-    def __getitem__(self, key: str) -> GenericJson[object] | None: ...
+    def __getitem__(self, key: str) -> Json | None: ...
     @overload
-    def __getitem__(self, key: tuple[str, int]) -> GenericJson[object]: ...
+    def __getitem__(self, key: tuple[str, int]) -> Json: ...
     @overload
-    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[GenericJson[object]]: ...
+    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[Json]: ...
     def __getitem__(self, key: str | tuple[str, int] | tuple[str, slice]):
         if isinstance(key, str):
             return self.jq(key).first
@@ -98,25 +115,7 @@ class GenericJson[J]:
         return self.jq(query)[slice_key]
 
 
-class GenericJsonFile[J](GenericJson[J]):
-    def __init__(self, json: J | None, file_path: str | None):
-        super().__init__(json)
-        self.file_path = file_path
-
-    @staticmethod
-    def empty():
-        return GenericJsonFile(None, None)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return GenericJsonFile(parse_json(data), file_path)
-
-    @property
-    def schema(self):
-        return self[".$schema"]
-
-
-class AppsettingsJsonFile[J](GenericJsonFile[J]):
+class Appsettings(Json):
     type Environment = Literal["Production", "Development", "Staging", "default"]
 
     @staticmethod
@@ -129,12 +128,8 @@ class AppsettingsJsonFile[J](GenericJsonFile[J]):
             return None
 
         group = match.group(2)
-        return cast(AppsettingsJsonFile.Environment, group) if group is not None else "default"
+        return cast(Appsettings.Environment, group) if group is not None else "default"
 
-    def __init__(self, json: J | None, file_path: str | None):
+    def __init__(self, json: bytes | object | None, file_path: str | None):
         super().__init__(json, file_path)
-        self.environment: AppsettingsJsonFile.Environment | None = AppsettingsJsonFile.env_from_path(file_path)
-
-    @staticmethod
-    def from_bytes(data: bytes | None, file_path: str | None):
-        return AppsettingsJsonFile(parse_json(data), file_path)
+        self.environment: Appsettings.Environment | None = Appsettings.env_from_path(file_path)
