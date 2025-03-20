@@ -8,11 +8,11 @@ download-retry-failed:
 
 .PHONY: install
 install:
-	uv sync
+	uv sync --frozen --inexact
 
 .PHONY: build
 build: install
-	uv pip install --reinstall .
+	uv pip install . --reinstall-package altinn-app-explore
 
 .PHONY: run
 run: build
