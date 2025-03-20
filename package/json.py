@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Literal, cast, overload
+from typing import Iterable, Literal, cast, overload
 
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
@@ -41,6 +41,13 @@ class Json[J = object]:
     @property
     def exists(self):
         return self.json is not None
+
+    def __iter__(self):
+        if isinstance(self.json, Iterable):
+            for v in self.json:
+                yield Json(v, file_path=self.file_path)
+        else:
+            raise TypeError(f"'{type(self.json)}' object is not iterable")
 
     def __repr__(self):
         if self._repr_inline_():

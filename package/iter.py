@@ -117,10 +117,10 @@ class IterContainer[T]:
         (a,) = self.__get_iter()
         return self.with_iterable(starmap(func, a))
 
-    def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R]]) -> IterContainer[R]:
+    def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R] | None]) -> IterContainer[R]:
         (a,) = self.__get_iter()
         return self.with_iterable(
-            (c for b in self.__map(func, a) for c in (b.__iterable if isinstance(b, IterContainer) else b))
+            (c for b in self.__map(func, a) if b is not None for c in (b.__iterable if isinstance(b, IterContainer) else b))
         )
 
     def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
