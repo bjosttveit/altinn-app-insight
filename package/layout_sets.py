@@ -116,7 +116,7 @@ class RuleHandler(Code[Js]):
             return None
         return js_parser.parse(self.bytes).root_node
 
-    @cache
+    # @cache
     def query(self, query: str) -> list[Code[Js]]:
         root_node = self.root_node()
         if root_node is None:
