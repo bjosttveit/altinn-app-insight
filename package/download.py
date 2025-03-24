@@ -67,7 +67,7 @@ class BaseQueryClient:
         self.queues: dict[str, Queue[None]] = {}
 
     async def __aenter__(self):
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = httpx.AsyncClient(http2=True, timeout=10.0)
         return self
 
     async def __aexit__(self, *args, **kwargs):
@@ -385,6 +385,7 @@ class QueryClient(BaseQueryClient):
             self.next_version_lock[deployment.key] = prev_version
             self.fetch_release_with_existing_app_failed.append(deployment)
 
+        # TODO: This seems to happen sometimes, why is it flaky?
         self.no_matching_releases.append(deployment)
         return None
 
