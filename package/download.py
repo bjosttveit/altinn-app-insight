@@ -397,6 +397,11 @@ class QueryClient(BaseQueryClient):
             if clusters is not None:
                 self.deployments_progress.update(self.deployments_task, total=len(clusters), visible=True)
                 await asyncio.gather(*[self.update_cluster(cluster) for cluster in clusters])
+                # The display has some trouble updating completely in Jupyter
+                self.deployments_progress.refresh()
+                self.apps_progress.refresh()
+                self.download_progress.refresh()
+                await asyncio.sleep(.1)
 
         self.remove_undeployed_apps()
         self.write_version_lock(self.next_version_lock)
