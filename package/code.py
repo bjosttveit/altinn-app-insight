@@ -32,6 +32,9 @@ class Code[L: CodeLanguage]:
         else:
             self.start_line = None
 
+    def __hash__(self):
+        return hash((self.file_path, self.text, self.start_line))
+
     @staticmethod
     def cs(content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Cs]:
         return Code("cs", content, file_path, start_line)
