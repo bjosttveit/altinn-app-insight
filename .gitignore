@@ -182,5 +182,6 @@ cython_debug/
 
 # Other
 data
-key.json
+data-test
+keys.json
 .DS_Store

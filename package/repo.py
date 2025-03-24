@@ -4,8 +4,11 @@ from typing import Literal, TypedDict
 FETCH_FAILED = "fetch-failed"
 
 type Environment = Literal["prod", "tt02"]
+type StudioEnvironment = Literal["prod", "staging", "dev"]
 type VersionLock = dict[str, LockData]
 type Status = Literal["success", "failed"]
+
+type Keys = dict[StudioEnvironment, str | None]
 
 
 class LockData(TypedDict):
@@ -15,7 +18,7 @@ class LockData(TypedDict):
     version: str
     commit_sha: str
     status: Status
-    dev_altinn_studio: bool
+    studio_env: StudioEnvironment
 
 
 @dataclass
@@ -47,7 +50,7 @@ class Release:
     app: str
     version: str
     commit_sha: str
-    dev: bool
+    studio_env: StudioEnvironment
 
     @property
     def key(self):
@@ -57,16 +60,16 @@ class Release:
     def repo_url(self):
         return (
             f"https://altinn.studio/repos/{self.org}/{self.app}.git"
-            if not self.dev
-            else f"https://dev.altinn.studio/repos/{self.org}/{self.app}.git"
+            if self.studio_env == "prod"
+            else f"https://{self.studio_env}.altinn.studio/repos/{self.org}/{self.app}.git"
         )
 
     @property
     def repo_download_url(self):
         return (
             f"https://altinn.studio/repos/{self.org}/{self.app}/archive/{self.commit_sha}.zip"
-            if not self.dev
-            else f"https://dev.altinn.studio/repos/{self.org}/{self.app}/archive/{self.commit_sha}.zip"
+            if self.studio_env == "prod"
+            else f"https://{self.studio_env}.altinn.studio/repos/{self.org}/{self.app}/archive/{self.commit_sha}.zip"
         )
 
 
@@ -78,7 +81,7 @@ def makeLock(release: Release, status: Status) -> LockData:
         "version": release.version,
         "commit_sha": release.commit_sha,
         "status": status,
-        "dev_altinn_studio": release.dev,
+        "studio_env": release.studio_env,
     }
 
 
