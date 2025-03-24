@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Callable, overload
 
@@ -177,7 +176,7 @@ class IterContainer[T]:
         return self.with_iterable(starmap(lambda k, l: map_func(k, self.with_iterable(list(l))), g))
 
 
-class IterController[T](ABC):
+class IterController[T]():
     def __init__(self, iterable: IterContainer[T]):
         self.i = iterable
 
