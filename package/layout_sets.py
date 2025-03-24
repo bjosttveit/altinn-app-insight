@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from functools import cache, cached_property
+from functools import cached_property
 from typing import NotRequired, Self, TypedDict, Unpack
 
 import tree_sitter_javascript as ts_js
@@ -54,8 +54,6 @@ class Component(Json[ComponentJson]):
 
 
 class Layout(Json[LayoutJson]):
-    layout_set: LayoutSet
-
     def __init__(self, json: bytes | LayoutJson | None = None, file_path: str | None = None):
         super().__init__(json, file_path)
         self.components = (
@@ -72,8 +70,6 @@ class Layout(Json[LayoutJson]):
 
 
 class LayoutSettings(Json):
-    layout_set: LayoutSet
-
     def __init__(self, json: bytes | object | None = None, file_path: str | None = None):
         super().__init__(json, file_path)
 
@@ -83,8 +79,6 @@ class LayoutSettings(Json):
 
 
 class RuleConfiguration(Json):
-    layout_set: LayoutSet
-
     def __init__(self, json: bytes | object | None = None, file_path: str | None = None):
         super().__init__(json, file_path)
 
@@ -102,26 +96,23 @@ class RuleArgs(TypedDict):
 
 
 class RuleHandler(Code[Js]):
-    layout_set: LayoutSet
-
-    def __init__(self, content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1):
+    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
         super().__init__("js", content, file_path, start_line)
 
     def set_layout_set(self, layout_set: LayoutSet) -> Self:
         self.layout_set = layout_set
         return self
 
+    @cached_property
     def root_node(self):
         if self.bytes is None:
             return None
         return js_parser.parse(self.bytes).root_node
 
-    @cache
     def query(self, query: str) -> list[Code[Js]]:
-        root_node = self.root_node()
-        if root_node is None:
+        if self.root_node is None:
             return []
-        matches = JS_LANGUAGE.query(query).captures(root_node).get("output")
+        matches = JS_LANGUAGE.query(query).captures(self.root_node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
@@ -225,7 +216,9 @@ class LayoutSet(Json[LayoutSetJson]):
 
 
 class LayoutSets(Json[LayoutSetsJson]):
-    sets: IterContainer[LayoutSet]
-
     def __init__(self, json: bytes | LayoutSetsJson | None = None, file_path: str | None = None):
         super().__init__(json, file_path)
+
+    def set_sets(self, sets: IterContainer[LayoutSet]) -> Self:
+        self.sets = sets
+        return self

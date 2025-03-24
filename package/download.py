@@ -401,7 +401,7 @@ class QueryClient(BaseQueryClient):
                 self.deployments_progress.refresh()
                 self.apps_progress.refresh()
                 self.download_progress.refresh()
-                await asyncio.sleep(.1)
+                await asyncio.sleep(0.1)
 
         self.remove_undeployed_apps()
         self.write_version_lock(self.next_version_lock)

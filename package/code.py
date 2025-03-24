@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import cached_property
 from typing import Literal, cast
 import re
 
@@ -16,39 +17,34 @@ type CodeLanguage = Js | Cs | Html | Xml
 
 
 class Code[L: CodeLanguage]:
-    def __init__(self, language: L, content: str | bytes | None, file_path: str | None, start_line: int):
+    def __init__(self, language: L, content: bytes | None, file_path: str | None, start_line: int):
         self.language = language
-        if isinstance(content, bytes):
-            self.text = content.decode(errors="ignore")
-            self.bytes = content
-        else:
-            self.text = content
-            self.bytes = content.encode() if content is not None else None
-
+        self.bytes = content
         self.file_path = file_path
 
-        if self.text is not None:
+        if content is not None:
             self.start_line = start_line
         else:
             self.start_line = None
 
-    def __hash__(self):
-        return hash((self.file_path, self.text, self.start_line))
+    @cached_property
+    def text(self):
+        return self.bytes.decode(errors="ignore") if self.bytes is not None else None
 
     @staticmethod
-    def cs(content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Cs]:
+    def cs(content: bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Cs]:
         return Code("cs", content, file_path, start_line)
 
     @staticmethod
-    def js(content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Js]:
+    def js(content: bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Js]:
         return Code("js", content, file_path, start_line)
 
     @staticmethod
-    def html(content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Html]:
+    def html(content: bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Html]:
         return Code("html", content, file_path, start_line)
 
     @staticmethod
-    def xml(content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Xml]:
+    def xml(content: bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Xml]:
         return Code("xml", content, file_path, start_line)
 
     @property

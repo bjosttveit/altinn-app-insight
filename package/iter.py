@@ -37,6 +37,10 @@ class IterContainer[T]:
         self.__iterable = tup[0]
         return tup[1:]
 
+    def __iter__(self):
+        (i,) = self.__get_iter()
+        return i
+
     @cached_property
     def list(self) -> list[T]:
         (iterator,) = self.__get_iter()
@@ -118,14 +122,7 @@ class IterContainer[T]:
 
     def flat_map[R](self, func: Callable[[T], IterContainer[R] | Iterable[R] | None]) -> IterContainer[R]:
         (a,) = self.__get_iter()
-        return self.with_iterable(
-            (
-                c
-                for b in self.__map(func, a)
-                if b is not None
-                for c in (b.__iterable if isinstance(b, IterContainer) else b)
-            )
-        )
+        return self.with_iterable((c for b in self.__map(func, a) if b is not None for c in b))
 
     def filter(self, func: Callable[[T], bool]) -> IterContainer[T]:
         a, b = self.__get_iter(2)

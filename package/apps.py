@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
-from functools import cache, cached_property
+from copy import copy
+from functools import cached_property
 from io import BufferedReader
 from pathlib import Path
 from typing import Callable, TypeVar, cast
@@ -46,7 +46,7 @@ class App:
         self.env: Environment = env
         self.org = org
         self.app = app
-        self.__app_dir = app_dir
+        self.app_dir = app_dir
         self.data = {}
 
     @property
@@ -59,7 +59,7 @@ class App:
 
     @property
     def file_path(self):
-        return self.__app_dir.joinpath(self.file_name)
+        return self.app_dir.joinpath(self.file_name)
 
     def __repr__(self):
         headers = ["Env", "Org", "App", *self.data_keys]
@@ -69,9 +69,9 @@ class App:
     def with_data(self, data: dict[str, object]) -> App:
         if self.open:
             raise Exception("Attempted to copy an `App` object while open for reading, this could cause weird issues!")
-        copy = deepcopy(self)
-        copy.data = data
-        return copy
+        app = copy(self)
+        app.data = data
+        return app
 
     @cached_property
     def data_keys(self) -> list[str]:
@@ -133,12 +133,10 @@ class App:
     def files(self) -> list[str]:
         return self.content.namelist()
 
-    @cache
     def read_file(self, path: str):
         with self.content.open(path) as zf:
             return zf.read()
 
-    @cache
     def file_exists(self, file_pattern: str):
         return IterContainer(self.files).filter(lambda path: re.search(file_pattern, path) is not None).is_not_empty
 
@@ -157,7 +155,7 @@ class App:
             .first_or_default(Json())
         )
 
-    @property
+    @cached_property
     def layout_sets(self) -> LayoutSets:
         layout_sets = (
             self.files_matching(r"/App/ui/layout-sets.json$")
@@ -192,59 +190,59 @@ class App:
             .filter(lambda values: values is not None),
         )
 
-        layout_sets.sets = layout_set_info.starmap(
-            lambda set_json, base_path, layouts_path: (
-                layout_set := LayoutSet(
-                    set_json,
-                    # Layouts
-                    self.files_matching(layouts_path)
-                    .map(lambda args: Layout(*args).set_layout_set(layout_set))
-                    .filter(lambda layout: layout.exists),
-                    # LayoutSettings
-                    self.files_matching(rf"{base_path}Settings\.json$").map(
-                        lambda args: LayoutSettings(*args).set_layout_set(layout_set)
-                    ),
-                    # RuleConfiguration
-                    self.files_matching(rf"{base_path}RuleConfiguration\.json$").map(
-                        lambda args: RuleConfiguration(*args).set_layout_set(layout_set)
-                    ),
-                    # RuleHandler
-                    self.files_matching(rf"{base_path}RuleHandler\.js$").map(
-                        lambda args: RuleHandler(*args).set_layout_set(layout_set)
-                    ),
-                    # LayoutSets
-                    layout_sets,
+        return layout_sets.set_sets(
+            layout_set_info.starmap(
+                lambda set_json, base_path, layouts_path: (
+                    layout_set := LayoutSet(
+                        set_json,
+                        # Layouts
+                        self.files_matching(layouts_path)
+                        .map(lambda args: Layout(*args).set_layout_set(layout_set))
+                        .filter(lambda layout: layout.exists),
+                        # LayoutSettings
+                        self.files_matching(rf"{base_path}Settings\.json$").map(
+                            lambda args: LayoutSettings(*args).set_layout_set(layout_set)
+                        ),
+                        # RuleConfiguration
+                        self.files_matching(rf"{base_path}RuleConfiguration\.json$").map(
+                            lambda args: RuleConfiguration(*args).set_layout_set(layout_set)
+                        ),
+                        # RuleHandler
+                        self.files_matching(rf"{base_path}RuleHandler\.js$").map(
+                            lambda args: RuleHandler(*args).set_layout_set(layout_set)
+                        ),
+                        # LayoutSets
+                        layout_sets,
+                    )
                 )
             )
         )
 
-        return layout_sets
-
-    @property
+    @cached_property
     def layouts(self) -> IterContainer[Layout]:
         return self.layout_sets.sets.flat_map(lambda set: set.layouts)
 
-    @property
+    @cached_property
     def components(self) -> IterContainer[Component]:
         return self.layout_sets.sets.flat_map(lambda set: set.layouts.flat_map(lambda layout: layout.components))
 
-    @property
+    @cached_property
     def layout_settings(self) -> IterContainer[LayoutSettings]:
         return self.layout_sets.sets.map(lambda set: set.layout_settings).filter(
             lambda layout_settings: layout_settings.exists
         )
 
-    @property
+    @cached_property
     def rule_configurations(self) -> IterContainer[RuleConfiguration]:
         return self.layout_sets.sets.map(lambda set: set.rule_configuration).filter(
             lambda rule_configuration: rule_configuration.exists
         )
 
-    @property
+    @cached_property
     def rule_handlers(self) -> IterContainer[RuleHandler]:
         return self.layout_sets.sets.map(lambda set: set.rule_handler).filter(lambda rule_handler: rule_handler.exists)
 
-    @property
+    @cached_property
     def app_settings(self) -> IterContainer[Appsettings]:
         return (
             self.files_matching(r"/App/appsettings(\.[^.]+)?\.json$")
@@ -252,7 +250,7 @@ class App:
             .filter(lambda file: file.exists)
         )
 
-    @property
+    @cached_property
     def cs(self) -> IterContainer[CsCode]:
         return self.files_matching(r"/App/.*\.cs$").map(lambda args: CsCode(*args)).filter(lambda file: file.exists)
 
@@ -268,7 +266,7 @@ class App:
             .first_or_default(Code.html())
         )
 
-    @property
+    @cached_property
     def csproj(self) -> IterContainer[Code[Xml]]:
         return (
             self.files_matching(r"/App/[^/]+.csproj$")

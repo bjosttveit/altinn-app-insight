@@ -1,5 +1,5 @@
 from __future__ import annotations
-from functools import cache
+from functools import cached_property
 from typing import NotRequired, TypedDict, Unpack, cast
 import tree_sitter_c_sharp as ts_cs
 from tree_sitter import Language, Parser
@@ -17,20 +17,19 @@ class ClassArgs(TypedDict):
 
 
 class CsCode(Code[Cs]):
-    def __init__(self, content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1):
+    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
         super().__init__("cs", content, file_path, start_line)
 
+    @cached_property
     def root_node(self):
         if self.bytes is None:
             return None
         return cs_parser.parse(self.bytes).root_node
 
-    @cache
     def query(self, query: str) -> list[CsCode]:
-        root_node = self.root_node()
-        if root_node is None:
+        if self.root_node is None:
             return []
-        matches = CS_LANGUAGE.query(query).captures(root_node).get("output")
+        matches = CS_LANGUAGE.query(query).captures(self.root_node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
@@ -74,7 +73,7 @@ class AppServiceArgs(TypedDict):
 
 
 class ProgramCs(CsCode):
-    def __init__(self, content: str | bytes | None = None, file_path: str | None = None, start_line: int = 1):
+    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
         super().__init__(content, file_path, start_line)
 
     def custom_app_services(self, **kwargs: Unpack[AppServiceArgs]) -> IterContainer[str]:
