@@ -67,7 +67,7 @@ class BaseQueryClient:
         self.queues: dict[str, Queue[None]] = {}
 
     async def __aenter__(self):
-        self.client = httpx.AsyncClient(http2=True, timeout=10.0)
+        self.client = httpx.AsyncClient(http2=True)
         return self
 
     async def __aexit__(self, *args, **kwargs):
@@ -99,7 +99,8 @@ class BaseQueryClient:
                 if attempt >= self.max_retries:
                     raise
                 if self.debug:
-                    self.console.print("[yellow] fetch_json: retrying url '{url}', attempt {attempt}")
+                    self.console.print(f"[yellow] fetch_json: retrying url '{url}', attempt {attempt + 1}")
+                await asyncio.sleep(1.0)
                 return await self.fetch_json(url, attempt + 1)
 
     async def download_file(
@@ -131,7 +132,7 @@ class BaseQueryClient:
                 if attempt >= self.max_retries:
                     raise
                 if self.debug:
-                    self.console.print("[yellow] download_file: retrying url '{url}', attempt {attempt}")
+                    self.console.print(f"[yellow] download_file: retrying url '{url}', attempt {attempt + 1}")
                 return self.download_file(url, file_path, token, on_progress, attempt + 1)
 
 
@@ -144,7 +145,7 @@ class QueryClient(BaseQueryClient):
         max_concurrent_requests_per_domain=4,
         debug=False,
     ):
-        super().__init__(max_concurrent_requests_per_domain, debug)
+        super().__init__(max_concurrent_requests_per_domain, debug=debug)
         self.key_path = key_path
         self.cache_dir = cache_dir
         self.retry_failed = retry_failed
@@ -278,11 +279,16 @@ class QueryClient(BaseQueryClient):
             # If fetching deployments fails for some reason, but we already have matching apps
             # Copy them over in the lock file so they are not deleted, and warn that they could not be updated
             # TODO: Possibly add a flag to disable this, in case the cluster has been deleted
+            failed_with_existing_apps = False
             for key, lock_data in self.prev_version_lock.items():
                 if lock_data["env"] == cluster.env and lock_data["org"] == cluster.org:
+                    failed_with_existing_apps = True
                     self.next_version_lock[key] = self.prev_version_lock[key]
-                    if cluster not in self.fetch_deployments_with_existing_apps_failed:
-                        self.fetch_deployments_with_existing_apps_failed.append(cluster)
+
+            if failed_with_existing_apps:
+                if self.debug:
+                    self.console.print_exception()
+                self.fetch_deployments_with_existing_apps_failed.append(cluster)
 
             self.fetch_deployments_failed.append(cluster)
             return None
@@ -324,6 +330,7 @@ class QueryClient(BaseQueryClient):
 
     async def get_release(self, deployment: Deployment) -> Release | None:
         prev_version = self.prev_version_lock.get(deployment.key)
+        prev_studio_env = prev_version["studio_env"] if prev_version is not None else None
 
         if prev_version is not None:
             if prev_version.get("status") == "failed" and not self.retry_failed:
@@ -354,8 +361,10 @@ class QueryClient(BaseQueryClient):
                 self.next_version_lock[deployment.key] = prev_version
                 return None
 
-        # Try fetching release from each studio environment, return the first match
-        for studio_env, key in self.keys.items():
+        # Try fetching release from each studio environment (unless we already know which env it is), return the first match
+        envs_to_check: list[StudioEnvironment] = [prev_studio_env] if prev_studio_env is not None else list(self.keys.keys())
+        for studio_env in envs_to_check:
+            key = self.keys.get(studio_env)
             if not key:
                 # Skip due to missing token
                 if prev_version is not None:
@@ -363,6 +372,8 @@ class QueryClient(BaseQueryClient):
                 continue
             releases_response = await self.fetch_release(deployment, studio_env)
             if releases_response is None:
+                if prev_studio_env is not None and self.debug:
+                    self.console.print_exception()
                 continue
             for releases_response in releases_response["results"]:
                 if releases_response["tagName"] == deployment.version:
