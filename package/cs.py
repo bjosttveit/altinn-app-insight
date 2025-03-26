@@ -2,7 +2,7 @@ from __future__ import annotations
 from functools import cached_property
 from typing import NotRequired, TypedDict, Unpack, cast
 import tree_sitter_c_sharp as ts_cs
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Node, Parser
 
 from package.code import Code, Cs
 from package.iter import IterContainer
@@ -11,32 +11,36 @@ CS_LANGUAGE = Language(ts_cs.language())
 cs_parser = Parser(CS_LANGUAGE)
 
 
-class ClassArgs(TypedDict):
-    name: NotRequired[str | None]
-    implements: NotRequired[str | None]
-
-
 class CsCode(Code[Cs]):
-    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
+    def __init__(
+        self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1, node: Node | None = None
+    ):
         super().__init__("cs", content, file_path, start_line)
+        self.__node = node
 
     @cached_property
-    def root_node(self):
+    def node(self):
+        if self.__node is not None:
+            return self.__node
         if self.bytes is None:
             return None
         return cs_parser.parse(self.bytes).root_node
 
     def query(self, query: str) -> list[CsCode]:
-        if self.root_node is None:
+        if self.node is None:
             return []
-        matches = CS_LANGUAGE.query(query).captures(self.root_node).get("output")
+        matches = CS_LANGUAGE.query(query).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
             IterContainer(matches)
-            .filter(lambda match: match.text is not None)
-            .map(lambda match: CsCode(match.text, self.file_path, match.start_point.row + 1))
+            .filter(lambda node: node.text is not None)
+            .map(lambda node: CsCode(node.text, self.file_path, node.start_point.row + 1, node))
         ).list
+
+    class ClassArgs(TypedDict):
+        name: NotRequired[str | None]
+        implements: NotRequired[str | None]
 
     def class_declarations(self, **kwargs: Unpack[ClassArgs]) -> IterContainer[CsCode]:
         name, implements = None, None
@@ -63,7 +67,27 @@ class CsCode(Code[Cs]):
                     name: (identifier) @class.name
                     {name_restriction}
                     {implements_restriction}) @output
-            """
+                """
+            )
+        )
+
+    class ObjectArgs(TypedDict):
+        type: NotRequired[str | None]
+
+    def object_creations(self, **kwargs: Unpack[ObjectArgs]) -> IterContainer[CsCode]:
+        type = None
+        if "type" in kwargs and (type := kwargs["type"]) is None:
+            return IterContainer()
+
+        type_restriction = f'(#eq? @object.type "{type}")' if type is not None else ""
+
+        return IterContainer(
+            self.query(
+                f"""
+                (object_creation_expression
+                    type: (identifier) @object.type
+                    {type_restriction}) @output
+                """
             )
         )
 

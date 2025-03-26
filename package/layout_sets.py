@@ -4,7 +4,7 @@ from functools import cached_property
 from typing import NotRequired, Self, TypedDict, Unpack
 
 import tree_sitter_javascript as ts_js
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Node, Parser
 
 from package.code import Code, Js
 from package.json import Json
@@ -104,21 +104,21 @@ class RuleHandler(Code[Js]):
         return self
 
     @cached_property
-    def root_node(self):
+    def node(self):
         if self.bytes is None:
             return None
         return js_parser.parse(self.bytes).root_node
 
     def query(self, query: str) -> list[Code[Js]]:
-        if self.root_node is None:
+        if self.node is None:
             return []
-        matches = JS_LANGUAGE.query(query).captures(self.root_node).get("output")
+        matches = JS_LANGUAGE.query(query).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
             IterContainer(matches)
-            .filter(lambda match: match.text is not None)
-            .map(lambda match: Code.js(match.text, self.file_path, match.start_point.row + 1))
+            .filter(lambda node: node.text is not None)
+            .map(lambda node: Code.js(node.text, self.file_path, node.start_point.row + 1))
         ).list
 
     def object_declarations(self, variable_name: str | None = None, propery_name: str | None = None):
