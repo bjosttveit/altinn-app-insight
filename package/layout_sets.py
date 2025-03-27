@@ -95,21 +95,22 @@ class RuleArgs(TypedDict):
     name: NotRequired[str | Json | None]
 
 
-class RuleHandler(Code[Js]):
-    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
+class JsCode(Code[Js]):
+    def __init__(
+        self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1, node: Node | None = None
+    ):
         super().__init__("js", content, file_path, start_line)
-
-    def set_layout_set(self, layout_set: LayoutSet) -> Self:
-        self.layout_set = layout_set
-        return self
+        self.__node = node
 
     @cached_property
     def node(self):
+        if self.__node is not None:
+            return self.__node
         if self.bytes is None:
             return None
         return js_parser.parse(self.bytes).root_node
 
-    def query(self, query: str) -> list[Code[Js]]:
+    def query(self, query: str) -> list[JsCode]:
         if self.node is None:
             return []
         matches = JS_LANGUAGE.query(query).captures(self.node).get("output")
@@ -118,7 +119,7 @@ class RuleHandler(Code[Js]):
         return (
             IterContainer(matches)
             .filter(lambda node: node.text is not None)
-            .map(lambda node: Code.js(node.text, self.file_path, node.start_point.row + 1))
+            .map(lambda node: JsCode(node.text, self.file_path, node.start_point.row + 1, node))
         ).list
 
     def object_declarations(self, variable_name: str | None = None, propery_name: str | None = None):
@@ -141,25 +142,34 @@ class RuleHandler(Code[Js]):
             )
         )
 
-    def rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+
+class RuleHandler(JsCode):
+    def __init__(self, content: bytes | None = None, file_path: str | None = None):
+        super().__init__(content, file_path)
+
+    def set_layout_set(self, layout_set: LayoutSet) -> Self:
+        self.layout_set = layout_set
+        return self
+
+    def rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[JsCode]:
         name = None
         if "name" in kwargs and (name := Json.to_string(kwargs["name"])) is None:
             return IterContainer()
         return self.object_declarations("ruleHandlerObject", name)
 
-    def rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+    def rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[JsCode]:
         name = None
         if "name" in kwargs and (name := Json.to_string(kwargs["name"])) is None:
             return IterContainer()
         return self.object_declarations("ruleHandlerHelper", name)
 
-    def conditional_rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+    def conditional_rules(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[JsCode]:
         name = None
         if "name" in kwargs and (name := Json.to_string(kwargs["name"])) is None:
             return IterContainer()
         return self.object_declarations("conditionalRuleHandlerObject", name)
 
-    def conditional_rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[Code[Js]]:
+    def conditional_rule_helpers(self, **kwargs: Unpack[RuleArgs]) -> IterContainer[JsCode]:
         name = None
         if "name" in kwargs and (name := Json.to_string(kwargs["name"])) is None:
             return IterContainer()

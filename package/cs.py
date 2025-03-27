@@ -97,8 +97,8 @@ class AppServiceArgs(TypedDict):
 
 
 class ProgramCs(CsCode):
-    def __init__(self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1):
-        super().__init__(content, file_path, start_line)
+    def __init__(self, content: bytes | None = None, file_path: str | None = None):
+        super().__init__(content, file_path)
 
     def custom_app_services(self, **kwargs: Unpack[AppServiceArgs]) -> IterContainer[str]:
         interface_name = None
