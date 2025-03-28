@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from functools import cached_property
+from functools import cache, cached_property
 from typing import NotRequired, Self, TypedDict, Unpack
 
 import tree_sitter_javascript as ts_js
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query
 
 from package.code import Code, Js
 from package.json import Json
@@ -110,10 +110,16 @@ class JsCode(Code[Js]):
             return None
         return js_parser.parse(self.bytes).root_node
 
-    def query(self, query: str) -> list[JsCode]:
+    @cache
+    @staticmethod
+    def build_query(query_str: str) -> Query:
+        """Building the query is expensive so it should not be done for every iteration"""
+        return JS_LANGUAGE.query(query_str)
+
+    def query(self, query_str: str) -> list[JsCode]:
         if self.node is None:
             return []
-        matches = JS_LANGUAGE.query(query).captures(self.node).get("output")
+        matches = JsCode.build_query(query_str).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (

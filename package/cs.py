@@ -1,9 +1,9 @@
 from __future__ import annotations
-from functools import cached_property
+from functools import cache, cached_property
 from itertools import starmap
 from typing import NotRequired, TypedDict, Unpack, cast, Sequence
 import tree_sitter_c_sharp as ts_cs
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query
 
 from package.code import Code, Cs
 from package.iter import IterContainer
@@ -27,10 +27,16 @@ class CsCode(Code[Cs]):
             return None
         return cs_parser.parse(self.bytes).root_node
 
-    def query(self, query: str) -> list[CsCode]:
+    @cache
+    @staticmethod
+    def build_query(query_str: str) -> Query:
+        """Building the query is expensive so it should not be done for every iteration"""
+        return CS_LANGUAGE.query(query_str)
+
+    def query(self, query_str: str) -> list[CsCode]:
         if self.node is None:
             return []
-        matches = CS_LANGUAGE.query(query).captures(self.node).get("output")
+        matches = CsCode.build_query(query_str).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
