@@ -362,7 +362,9 @@ class QueryClient(BaseQueryClient):
                 return None
 
         # Try fetching release from each studio environment (unless we already know which env it is), return the first match
-        envs_to_check: list[StudioEnvironment] = [prev_studio_env] if prev_studio_env is not None else list(self.keys.keys())
+        envs_to_check: list[StudioEnvironment] = (
+            [prev_studio_env] if prev_studio_env is not None else list(self.keys.keys())
+        )
         for studio_env in envs_to_check:
             key = self.keys.get(studio_env)
             if not key:

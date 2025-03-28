@@ -133,10 +133,6 @@ class App:
     def files(self) -> list[str]:
         return self.content.namelist()
 
-    def read_file(self, path: str):
-        with self.content.open(path) as zf:
-            return zf.read()
-
     def file_exists(self, file_pattern: str):
         return IterContainer(self.files).filter(lambda path: re.search(file_pattern, path) is not None).is_not_empty
 
@@ -144,7 +140,7 @@ class App:
         return (
             IterContainer(self.files)
             .filter(lambda path: re.search(file_pattern, path) is not None)
-            .map(lambda path: (self.read_file(path), path))
+            .map(lambda path: (self.content.read(path), path))
         )
 
     @cached_property

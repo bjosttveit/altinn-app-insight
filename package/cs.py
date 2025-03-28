@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import cached_property
-from typing import NotRequired, TypedDict, Unpack, cast
+from itertools import starmap
+from typing import NotRequired, TypedDict, Unpack, cast, Sequence
 import tree_sitter_c_sharp as ts_cs
 from tree_sitter import Language, Node, Parser
 
@@ -73,20 +74,44 @@ class CsCode(Code[Cs]):
 
     class ObjectArgs(TypedDict):
         type: NotRequired[str | None]
+        fields: NotRequired[Sequence[str]]
 
     def object_creations(self, **kwargs: Unpack[ObjectArgs]) -> IterContainer[CsCode]:
-        type = None
+        type, fields = None, kwargs.get("fields")
         if "type" in kwargs and (type := kwargs["type"]) is None:
             return IterContainer()
 
         type_restriction = f'(#eq? @object.type "{type}")' if type is not None else ""
+
+        assignments = (
+            "\n".join(
+                starmap(
+                    lambda i, name: f"""
+                    (assignment_expression
+                        left: (identifier) @field.{i}.name
+                        (#eq? @field.{i}.name "{name}"))""",
+                    enumerate(fields),
+                )
+            )
+            if fields is not None
+            else None
+        )
+        initializer_restriction = (
+            f"""
+            initializer: (initializer_expression
+                {assignments})
+             """
+            if assignments is not None
+            else ""
+        )
 
         return IterContainer(
             self.query(
                 f"""
                 (object_creation_expression
                     type: (identifier) @object.type
-                    {type_restriction}) @output
+                    {type_restriction}
+                    {initializer_restriction}) @output
                 """
             )
         )
