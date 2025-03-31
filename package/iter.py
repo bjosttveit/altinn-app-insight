@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Callable, overload
+from typing import TYPE_CHECKING, Callable, Sequence, overload
 
 from .html import html
 
@@ -33,6 +33,8 @@ class IterContainer[T]:
         return map(func, iterable)
 
     def __get_iter(self, n: int = 1) -> tuple[Iterator[T], ...]:
+        if isinstance(self.__iterable, Sequence):
+            return tuple([iter(self.__iterable) for _ in range(n)])
         tup = tee(self.__iterable, n + 1)
         self.__iterable = tup[0]
         return tup[1:]
