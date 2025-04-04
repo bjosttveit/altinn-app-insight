@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 from typing import Iterable, Literal, cast, overload
 
@@ -37,6 +38,11 @@ class Json[J = object]:
         else:
             self.json = cast(J | None, json)
         self.file_path = file_path
+
+    @property
+    def file_name(self):
+        if self.file_path is not None:
+            return Path(self.file_path).name
 
     @property
     def exists(self):

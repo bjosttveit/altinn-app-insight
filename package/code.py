@@ -1,5 +1,6 @@
 from __future__ import annotations
 from functools import cached_property
+from pathlib import Path
 from typing import Literal, cast
 import re
 
@@ -46,6 +47,11 @@ class Code[L: CodeLanguage]:
     @staticmethod
     def xml(content: bytes | None = None, file_path: str | None = None, start_line: int = 1) -> Code[Xml]:
         return Code("xml", content, file_path, start_line)
+
+    @property
+    def file_name(self):
+        if self.file_path is not None:
+            return Path(self.file_path).name
 
     @property
     def exists(self):
