@@ -140,3 +140,21 @@ class Appsettings(Json):
     def __init__(self, json: bytes | object | None, file_path: str | None):
         super().__init__(json, file_path)
         self.environment: Appsettings.Environment | None = Appsettings.env_from_path(file_path)
+
+
+class TextResource(Json):
+
+    @staticmethod
+    def lang_from_path(file_path: str | None) -> str | None:
+        if file_path is None:
+            return None
+
+        match = re.search(r"resource\.([a-z]{2})\.json$", file_path)
+        if match is None:
+            return None
+
+        return match.group(1)
+
+    def __init__(self, json: bytes | object | None, file_path: str | None):
+        super().__init__(json, file_path)
+        self.language = TextResource.lang_from_path(file_path)

@@ -9,7 +9,7 @@ from package.cs import CsCode, ProgramCs
 from package.html import tabulate_html
 
 from .iter import IterContainer, IterController
-from .json import Appsettings, Json
+from .json import Appsettings, Json, TextResource
 from .layout_sets import (
     Component,
     Layout,
@@ -237,6 +237,14 @@ class App:
     @cached_property
     def rule_handlers(self) -> IterContainer[RuleHandler]:
         return self.layout_sets.sets.map(lambda set: set.rule_handler).filter(lambda rule_handler: rule_handler.exists)
+
+    @cached_property
+    def text_resources(self) -> IterContainer[TextResource]:
+        return (
+            self.files_matching(r"/App/config/texts/resource\.[a-z]{2}\.json$")
+            .map(lambda args: TextResource(*args))
+            .filter(lambda file: file.exists)
+        )
 
     @cached_property
     def app_settings(self) -> IterContainer[Appsettings]:
