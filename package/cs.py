@@ -46,24 +46,47 @@ class CsCode(Code[Cs]):
         ).list
 
     class ClassArgs(TypedDict):
-        name: NotRequired[str | None]
-        implements: NotRequired[str | None]
+        name: NotRequired[str]
+        implements: NotRequired[Sequence[str]]
+        modifiers: NotRequired[Sequence[str]]
 
     def class_declarations(self, **kwargs: Unpack[ClassArgs]) -> IterContainer[CsCode]:
-        name, implements = None, None
-        if "name" in kwargs and (name := kwargs["name"]) is None:
-            return IterContainer()
-        if "implements" in kwargs and (implements := kwargs["implements"]) is None:
-            return IterContainer()
+        name, implements, modifiers = kwargs.get("name"), kwargs.get("implements"), kwargs.get("modifiers")
 
         name_restriction = f'(#eq? @class.name "{name}")' if name is not None else ""
+
+        interfaces = (
+            "\n".join(
+                starmap(
+                    lambda i, interface: f"""
+                        (identifier) @interface.{i}.name
+                        (#eq? @interface.{i}.name "{interface}")""",
+                    enumerate(implements),
+                )
+            )
+            if implements is not None
+            else None
+        )
+
         implements_restriction = (
             f"""
             (base_list
-                (identifier) @interface.name
-                (#eq? @interface.name "{implements}"))
+                {interfaces})
             """
-            if implements is not None
+            if interfaces is not None
+            else ""
+        )
+
+        modifiers_restriction = (
+            "\n".join(
+                starmap(
+                    lambda i, modifier: f"""
+                        (modifier) @modifier.{i}.name
+                        (#eq? @modifier.{i}.name "{modifier}")""",
+                    enumerate(modifiers),
+                )
+            )
+            if modifiers is not None
             else ""
         )
 
@@ -71,9 +94,46 @@ class CsCode(Code[Cs]):
             self.query(
                 f"""
                 (class_declaration
+                    {modifiers_restriction}
                     name: (identifier) @class.name
                     {name_restriction}
                     {implements_restriction}) @output
+                """
+            )
+        )
+
+    class MethodArgs(TypedDict):
+        name: NotRequired[str]
+        returns: NotRequired[str]
+        modifiers: NotRequired[Sequence[str]]
+
+    def method_declarations(self, **kwargs: Unpack[MethodArgs]) -> IterContainer[CsCode]:
+        name, returns, modifiers = kwargs.get("name"), kwargs.get("returns"), kwargs.get("modifiers")
+
+        name_restriction = f'(#eq? @method.name "{name}")' if name is not None else ""
+        returns_restriction = f'(#eq? @method.returns "{returns}")' if returns is not None else ""
+        modifiers_restriction = (
+            "\n".join(
+                starmap(
+                    lambda i, modifier: f"""
+                        (modifier) @modifier.{i}.name
+                        (#eq? @modifier.{i}.name "{modifier}")""",
+                    enumerate(modifiers),
+                )
+            )
+            if modifiers is not None
+            else ""
+        )
+
+        return IterContainer(
+            self.query(
+                f"""
+                (method_declaration
+                    {modifiers_restriction}
+                    returns: (_) @method.returns
+                    {returns_restriction}
+                    name: (identifier) @method.name
+                    {name_restriction}) @output
                 """
             )
         )
