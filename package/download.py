@@ -67,7 +67,9 @@ class BaseQueryClient:
         self.queues: dict[str, Queue[None]] = {}
 
     async def __aenter__(self):
-        self.client = httpx.AsyncClient(http2=True)
+        self.client = httpx.AsyncClient(
+            http2=True, limits=httpx.Limits(max_connections=20, max_keepalive_connections=20, keepalive_expiry=None)
+        )
         return self
 
     async def __aexit__(self, *args, **kwargs):
