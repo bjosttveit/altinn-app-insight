@@ -5,6 +5,8 @@ Query Altinn app configurations in tt02 and prod
 ## Requirements
 
 - [uv](https://github.com/astral-sh/uv)
+   - Mac: `brew install uv`
+   - Windows: 🤷
 
 ## Getting started
 
