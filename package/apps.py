@@ -21,7 +21,7 @@ from .layout_sets import (
     RuleHandler,
 )
 from .plotting import setup_plot
-from .repo import Environment, VersionLock
+from .repo import Environment, StudioEnvironment, VersionLock
 from .version import Version
 
 if TYPE_CHECKING:
@@ -42,10 +42,14 @@ from tabulate import tabulate
 
 
 class App:
-    def __init__(self, env: Environment, org: str, app: str, app_dir: Path):
+    def __init__(
+        self, env: Environment, org: str, app: str, commit_sha: str, studio_env: StudioEnvironment, app_dir: Path
+    ):
         self.env: Environment = env
         self.org = org
         self.app = app
+        self.commit_sha = commit_sha
+        self.studio_env = studio_env
         self.app_dir = app_dir
         self.data = {}
 
@@ -60,6 +64,17 @@ class App:
     @property
     def file_path(self):
         return self.app_dir.joinpath(self.file_name)
+
+    @property
+    def base_url(self):
+        return (
+            f"https://altinn.studio/repos/{self.org}/{self.app}/src/commit/{self.commit_sha}"
+            if self.studio_env == "prod"
+            else f"https://{self.studio_env}.altinn.studio/repos/{self.org}/{self.app}/src/commit/{self.commit_sha}"
+        )
+
+    def get_remote_url(self, file_path: str):
+        return f"{self.base_url}{file_path.removeprefix(self.app)}"
 
     def __repr__(self):
         headers = ["Env", "Org", "App", *self.data_keys]
@@ -140,7 +155,7 @@ class App:
         return (
             IterContainer(self.files)
             .filter(lambda path: re.search(file_pattern, path) is not None)
-            .map(lambda path: (self.content.read(path), path))
+            .map(lambda path: (self.content.read(path), path, self.get_remote_url(path)))
         )
 
     @cached_property
@@ -355,7 +370,16 @@ class Apps(IterController[App]):
         apps: list[App] = []
         for lock_data in lock_file.values():
             if lock_data["status"] == "success":
-                apps.append(App(lock_data["env"], lock_data["org"], lock_data["app"], apps_dir))
+                apps.append(
+                    App(
+                        lock_data["env"],
+                        lock_data["org"],
+                        lock_data["app"],
+                        lock_data["commit_sha"],
+                        lock_data["studio_env"],
+                        apps_dir,
+                    )
+                )
 
         executor = ThreadPoolExecutor(max_workers=max_open_files)
 

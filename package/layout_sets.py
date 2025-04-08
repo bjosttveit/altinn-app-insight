@@ -6,7 +6,7 @@ from typing import NotRequired, Self, TypedDict, Unpack
 import tree_sitter_javascript as ts_js
 from tree_sitter import Language, Node, Parser, Query
 
-from package.code import Code, Js
+from package.code import Code, Js, Lines
 from package.json import Json
 
 from .iter import IterContainer
@@ -36,8 +36,10 @@ class LayoutSetsJson(TypedDict):
 
 
 class Component(Json[ComponentJson]):
-    def __init__(self, json: bytes | ComponentJson | None, file_path: str | None, layout: Layout):
-        super().__init__(json, file_path)
+    def __init__(
+        self, json: bytes | ComponentJson | None, file_path: str | None, remote_url: str | None, layout: Layout
+    ):
+        super().__init__(json, file_path, remote_url)
         self.layout = layout
 
     @property
@@ -54,11 +56,13 @@ class Component(Json[ComponentJson]):
 
 
 class Layout(Json[LayoutJson]):
-    def __init__(self, json: bytes | LayoutJson | None = None, file_path: str | None = None):
-        super().__init__(json, file_path)
+    def __init__(
+        self, json: bytes | LayoutJson | None = None, file_path: str | None = None, remote_url: str | None = None
+    ):
+        super().__init__(json, file_path, remote_url)
         self.components = (
             IterContainer(self.json["data"]["layout"]).map(
-                lambda component_json: Component(component_json, file_path, self)
+                lambda component_json: Component(component_json, file_path, remote_url, self)
             )
             if self.json is not None
             else IterContainer()
@@ -70,8 +74,8 @@ class Layout(Json[LayoutJson]):
 
 
 class LayoutSettings(Json):
-    def __init__(self, json: bytes | object | None = None, file_path: str | None = None):
-        super().__init__(json, file_path)
+    def __init__(self, json: bytes | object | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(json, file_path, remote_url)
 
     def set_layout_set(self, layout_set: LayoutSet) -> Self:
         self.layout_set = layout_set
@@ -79,8 +83,8 @@ class LayoutSettings(Json):
 
 
 class RuleConfiguration(Json):
-    def __init__(self, json: bytes | object | None = None, file_path: str | None = None):
-        super().__init__(json, file_path)
+    def __init__(self, json: bytes | object | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(json, file_path, remote_url)
 
     def set_layout_set(self, layout_set: LayoutSet) -> Self:
         self.layout_set = layout_set
@@ -97,9 +101,14 @@ class RuleArgs(TypedDict):
 
 class JsCode(Code[Js]):
     def __init__(
-        self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1, node: Node | None = None
+        self,
+        content: bytes | None = None,
+        file_path: str | None = None,
+        remote_url: str | None = None,
+        lines: Lines = None,
+        node: Node | None = None,
     ):
-        super().__init__("js", content, file_path, start_line)
+        super().__init__("js", content, file_path, remote_url, lines)
         self.__node = node
 
     @cached_property
@@ -125,7 +134,11 @@ class JsCode(Code[Js]):
         return (
             IterContainer(matches)
             .filter(lambda node: node.text is not None)
-            .map(lambda node: JsCode(node.text, self.file_path, node.start_point.row + 1, node))
+            .map(
+                lambda node: JsCode(
+                    node.text, self.file_path, self.remote_url, (node.start_point.row + 1, node.end_point.row + 1), node
+                )
+            )
         ).list
 
     def object_declarations(self, variable_name: str | None = None, propery_name: str | None = None):
@@ -150,8 +163,8 @@ class JsCode(Code[Js]):
 
 
 class RuleHandler(JsCode):
-    def __init__(self, content: bytes | None = None, file_path: str | None = None):
-        super().__init__(content, file_path)
+    def __init__(self, content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(content, file_path, remote_url)
 
     def set_layout_set(self, layout_set: LayoutSet) -> Self:
         self.layout_set = layout_set
@@ -232,8 +245,10 @@ class LayoutSet(Json[LayoutSetJson]):
 
 
 class LayoutSets(Json[LayoutSetsJson]):
-    def __init__(self, json: bytes | LayoutSetsJson | None = None, file_path: str | None = None):
-        super().__init__(json, file_path)
+    def __init__(
+        self, json: bytes | LayoutSetsJson | None = None, file_path: str | None = None, remote_url: str | None = None
+    ):
+        super().__init__(json, file_path, remote_url)
 
     def set_sets(self, sets: IterContainer[LayoutSet]) -> Self:
         self.sets = sets

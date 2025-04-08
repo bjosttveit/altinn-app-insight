@@ -5,7 +5,7 @@ from typing import NotRequired, TypedDict, Unpack, cast, Sequence
 import tree_sitter_c_sharp as ts_cs
 from tree_sitter import Language, Node, Parser, Query
 
-from package.code import Code, Cs
+from package.code import Code, Cs, Lines
 from package.iter import IterContainer
 
 CS_LANGUAGE = Language(ts_cs.language())
@@ -14,9 +14,14 @@ cs_parser = Parser(CS_LANGUAGE)
 
 class CsCode(Code[Cs]):
     def __init__(
-        self, content: bytes | None = None, file_path: str | None = None, start_line: int = 1, node: Node | None = None
+        self,
+        content: bytes | None = None,
+        file_path: str | None = None,
+        remote_url: str | None = None,
+        lines: Lines = None,
+        node: Node | None = None,
     ):
-        super().__init__("cs", content, file_path, start_line)
+        super().__init__("cs", content, file_path, remote_url, lines)
         self.__node = node
 
     @cached_property
@@ -42,7 +47,11 @@ class CsCode(Code[Cs]):
         return (
             IterContainer(matches)
             .filter(lambda node: node.text is not None)
-            .map(lambda node: CsCode(node.text, self.file_path, node.start_point.row + 1, node))
+            .map(
+                lambda node: CsCode(
+                    node.text, self.file_path, self.remote_url, (node.start_point.row + 1, node.end_point.row + 1), node
+                )
+            )
         ).list
 
     class ClassArgs(TypedDict):
@@ -188,8 +197,8 @@ class AppServiceArgs(TypedDict):
 
 
 class ProgramCs(CsCode):
-    def __init__(self, content: bytes | None = None, file_path: str | None = None):
-        super().__init__(content, file_path)
+    def __init__(self, content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(content, file_path, remote_url)
 
     def custom_app_services(self, **kwargs: Unpack[AppServiceArgs]) -> IterContainer[str]:
         interface_name = None
