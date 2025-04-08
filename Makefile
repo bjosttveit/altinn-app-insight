@@ -12,7 +12,7 @@ install:
 
 .PHONY: build
 build: install
-	uv pip install . --reinstall-package altinn-app-explore
+	uv pip install . --reinstall-package altinn-app-insight
 
 .PHONY: run
 run: build

@@ -1,7 +1,7 @@
 [project]
-name = "altinn-app-explore"
+name = "altinn-app-insight"
 version = "0.1.0"
-description = "Add your description here"
+description = "Query Altinn app configurations in tt02 and prod"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
