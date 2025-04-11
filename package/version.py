@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import re
 
 VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
@@ -12,6 +14,14 @@ class NullableInt:
         else:
             self.value = value
 
+    @staticmethod
+    def from_value(value: Any):
+        if isinstance(value, NullableInt):
+            return value
+        if isinstance(value, int) or isinstance(value, str):
+            return NullableInt(value)
+        return NullableInt(None)
+
     @property
     def exists(self):
         return self.value is not None
@@ -19,33 +29,35 @@ class NullableInt:
     def __repr__(self):
         return str(self.value)
 
-    def __eq__(self, other):
-        other_value = other.value if isinstance(other, NullableInt) else other
-        return self.value == other_value
+    def __le__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        return self == other or self < other
 
-    def __lt__(self, other):
-        other_value = other.value if isinstance(other, NullableInt) else other
-        if self.value is None or other_value is None:
-            return False
-        return self.value < other_value
+    def __ge__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        return self == other or self > other
 
-    def __gt__(self, other):
-        other_value = other.value if isinstance(other, NullableInt) else other
-        if self.value is None or other_value is None:
-            return False
-        return self.value > other_value
+    def __eq__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        return self.value == other.value
 
-    def __lte__(self, other):
-        other_value = other.value if isinstance(other, NullableInt) else other
-        if self.value is None or other_value is None:
-            return False
-        return self.value <= other_value
+    def __ne__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        return self.value != other.value
 
-    def __gte__(self, other):
-        other_value = other.value if isinstance(other, NullableInt) else other
-        if self.value is None or other_value is None:
-            return False
-        return self.value >= other_value
+    """ Assuming that None is the smallest value """
+
+    def __lt__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        if self.value is None or other.value is None:
+            return other.exists
+        return self.value < other.value
+
+    def __gt__(self, other_value):
+        other = NullableInt.from_value(other_value)
+        if self.value is None or other.value is None:
+            return self.exists
+        return self.value > other.value
 
 
 class Version(str):
@@ -60,76 +72,51 @@ class Version(str):
     def __repr__(self):
         return self.__version_string if self.__version_string is not None else "None"
 
-    def __le__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
+    @staticmethod
+    def from_value(value: Any):
+        if isinstance(value, Version):
+            return value
+        if isinstance(value, str):
+            return Version(value)
+        return Version(None)
 
+    def __le__(self, other_value):
+        other = Version.from_value(other_value)
         return self == other or self < other
 
-    def __ge__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
-
+    def __ge__(self, other_value):
+        other = Version.from_value(other_value)
         return self == other or self > other
 
-    def __ne__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
-
+    def __ne__(self, other_value):
+        other = Version.from_value(other_value)
         return self.__version_string != other.__version_string
 
-    def __eq__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
-
+    def __eq__(self, other_value):
+        other = Version.from_value(other_value)
         return self.__version_string == other.__version_string
 
-    def __lt__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
+    """ Assuming that None is the smallest value, and that missing components makes it bigger, i.e. 4 > 4.18 """
 
-        if self.major is None or other.major is None:
-            # This should never happen since it will not match unless this exists
-            return False
+    def __lt__(self, other_value):
+        other = Version.from_value(other_value)
+        if not self.exists or not other.exists:
+            return other.exists
+
         if self.major != other.major:
             return self.major < other.major
 
         if self.minor != other.minor:
-            if self.minor is None:
+            if not self.minor.exists:
                 return False
-            if other.minor is None:
+            if not other.minor.exists:
                 return True
             return self.minor < other.minor
 
         if self.patch != other.patch:
-            if self.patch is None:
+            if not self.patch.exists:
                 return False
-            if other.patch is None:
+            if not other.patch.exists:
                 return True
             return self.patch < other.patch
 
@@ -141,32 +128,25 @@ class Version(str):
 
         return False
 
-    def __gt__(self, other_version):
-        other = (
-            other_version
-            if isinstance(other_version, Version)
-            else Version(other_version) if type(other_version) == str else None
-        )
-        if not self.exists or other is None or not other.exists:
-            return False
+    def __gt__(self, other_value):
+        other = Version.from_value(other_value)
+        if not self.exists or not other.exists:
+            return self.exists
 
-        if self.major is None or other.major is None:
-            # This should never happen since it will not match unless this exists
-            return False
         if self.major != other.major:
             return self.major > other.major
 
         if self.minor != other.minor:
-            if self.minor is None:
+            if not self.minor.exists:
                 return True
-            if other.minor is None:
+            if not other.minor.exists:
                 return False
             return self.minor > other.minor
 
         if self.patch != other.patch:
-            if self.patch is None:
+            if not self.patch.exists:
                 return True
-            if other.patch is None:
+            if not other.patch.exists:
                 return False
             return self.patch > other.patch
 
