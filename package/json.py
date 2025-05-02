@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-from typing import Iterable, Literal, cast, overload
+from typing import Iterable, Literal, cast, overload, Any
 
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
@@ -87,30 +87,36 @@ class Json[J = object]:
         if isinstance(value.json, str):
             return value.json
 
+    @staticmethod
+    def get_value(obj: Any):
+        if isinstance(obj, Json):
+            return obj.json
+        return obj
+
     def __eq__(self, other: object | Json):
-        other_json = other.json if isinstance(other, Json) else other
+        other_json = Json.get_value(other)
         return self.json == other_json
 
     def __gt__(self, other: object | Json):
-        other_json = other.json if isinstance(other, Json) else other
+        other_json = Json.get_value(other)
         if not self.exists or other_json is None:
             return False
         return self.json > other_json  # type: ignore
 
     def __lt__(self, other: object | Json):
-        other_json = other.json if isinstance(other, Json) else other
+        other_json = Json.get_value(other)
         if not self.exists or other_json is None:
             return False
         return self.json < other_json  # type: ignore
 
     def __gte__(self, other: object | Json):
-        other_json = other.json if isinstance(other, Json) else other
+        other_json = Json.get_value(other)
         if not self.exists or other_json is None:
             return False
         return self.json >= other_json  # type: ignore
 
     def __lte__(self, other: object | Json):
-        other_json = other.json if isinstance(other, Json) else other
+        other_json = Json.get_value(other)
         if not self.exists or other_json is None:
             return False
         return self.json <= other_json  # type: ignore

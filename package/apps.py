@@ -7,6 +7,7 @@ from numpy.typing import ArrayLike
 from package.code import Code, Html, Xml
 from package.cs import CsCode, ProgramCs
 from package.html import tabulate_html
+from package.xml import XML
 
 from .iter import IterContainer, IterController
 from .json import Appsettings, Json, TextResource
@@ -283,6 +284,22 @@ class App:
             self.files_matching(r"/App/views/Home/Index.cshtml$")
             .map(lambda args: Code.html(*args))
             .first_or_default(Code.html())
+        )
+
+    @cached_property
+    def process(self) -> XML:
+        return (
+            self.files_matching(r"/App/config/process/process.bpmn")
+            .map(lambda args: XML(*args))
+            .first_or_default(XML())
+        )
+
+    @cached_property
+    def policy(self) -> XML:
+        return (
+            self.files_matching(r"/App/config/authorization/policy.xml")
+            .map(lambda args: XML(*args))
+            .first_or_default(XML())
         )
 
     @cached_property
