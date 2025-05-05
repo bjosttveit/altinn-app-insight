@@ -9,6 +9,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 
+from package.html import file_name_html
 from package.iter import IterContainer
 
 type Js = Literal["js"]
@@ -76,11 +77,7 @@ class Code[L: CodeLanguage]:
     def _repr_html_(self) -> str:
         lexer = get_lexer_by_name(self.language)
         title_settings = (
-            {
-                "filename": f'<a href="{self.remote_url_lines}" target="_blank" style="color: var(--jp-content-link-color);">{self.file_path}</a>'
-            }
-            if self.file_path is not None
-            else {}
+            {"filename": file_name_html(self.file_path, self.remote_url_lines)} if self.file_path is not None else {}
         )
         line_settings = {"linenos": "inline", "linenostart": self.lines[0] if self.lines is not None else 1}
         class_name = "".join(random.choices(string.ascii_letters, k=16))

@@ -13,6 +13,8 @@ from pygments.lexers import get_lexer_by_name
 import jq
 import rapidjson
 
+from package.html import file_name_html
+
 from .iter import IterContainer
 
 
@@ -68,11 +70,7 @@ class Json[J = object]:
     def _repr_html_(self):
         lexer = get_lexer_by_name("json")
         title_settings = (
-            {
-                "filename": f'<a href="{self.remote_url}" target="_blank" style="color: var(--jp-content-link-color);">{self.file_path}</a>'
-            }
-            if self.file_path is not None
-            else {}
+            {"filename": file_name_html(self.file_path, self.remote_url)} if self.file_path is not None else {}
         )
         class_name = "".join(random.choices(string.ascii_letters, k=16))
         settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings}

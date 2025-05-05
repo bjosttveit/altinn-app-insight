@@ -21,6 +21,17 @@ def contains_html(seq: list | tuple):
     return False
 
 
+def file_name_html(file_path: str, url: str | None):
+    if url:
+        return f"""<a href="{url}" 
+                target="_blank" 
+                style="color: var(--jp-content-link-color); background: var(--jp-layout-color1); width: 100%; display: inline-block;">
+                {file_path}
+                </a>"""
+    else:
+        return f"""<span style="background: var(--jp-layout-color1); width: 100%; display: inline-block;">{file_path}</span>"""
+
+
 def html(obj: object) -> str:
     if is_html(obj):
         return obj._repr_html_()  # type: ignore
