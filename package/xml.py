@@ -1,6 +1,7 @@
 from __future__ import annotations
+import random, string
 from functools import cached_property
-from typing import overload, Any
+from typing import cast, overload, Any
 from lxml import etree
 from pathlib import Path
 
@@ -12,8 +13,23 @@ from package.iter import IterContainer
 
 parser = etree.XMLParser(remove_blank_text=True)
 
+# lxml raises an exception if you try to query a missing namespace
+default_ns_map = {
+    "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "altinn": "http://altinn.no/process",
+    "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
+    "bpmndi": "http://www.omg.org/spec/BPMN/20100524/DI",
+    "dc": "http://www.omg.org/spec/DD/20100524/DC",
+    "di": "http://www.omg.org/spec/DD/20100524/DI",
+    "bpmn2": "http://www.omg.org/spec/BPMN/20100524/MODEL",
+    "modeler": "http://camunda.org/schema/modeler/1.0",
+    "camunda": "http://camunda.org/schema/1.0/bpmn",
+    "xacml": "urn:oasis:names:tc:xacml:3.0:core:schema:wd-17",
+    "xsl": "http://www.w3.org/2001/XMLSchema-instance",
+}
 
-class XML[X = etree._Element]:
+
+class Xml[X = etree._Element]:
     def __init__(self, xml: bytes | X | None = None, file_path: str | None = None, remote_url: str | None = None):
         if isinstance(xml, bytes):
             self.element = etree.fromstring(xml, parser=parser)
@@ -37,6 +53,13 @@ class XML[X = etree._Element]:
 
         return self.element
 
+    @cached_property
+    def nsmap(self):
+        if not hasattr(self.element, "nsmap"):
+            return default_ns_map
+
+        return {**default_ns_map, **self.element.nsmap}  # type: ignore
+
     @property
     def exists(self):
         return self.text is not None
@@ -56,69 +79,94 @@ class XML[X = etree._Element]:
             if self.file_path is not None
             else {}
         )
-        settings = {"wrapcode": True, **title_settings}
+
+        class_name = "".join(random.choices(string.ascii_letters, k=16))
+        settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings}
         fmt = HtmlFormatter(**settings)
-        style = "<style>{}</style>".format(fmt.get_style_defs(".output_html"))
+        style = "<style>{}</style>".format(fmt.get_style_defs())
         return style + highlight(self.text, lexer, fmt)
 
     @staticmethod
     def get_value(obj: Any):
-        if isinstance(obj, XML):
+        if isinstance(obj, Xml):
             return obj.element
         return obj
 
-    def __eq__(self, other: object | XML):
-        other_element = XML.get_value(other)
+    def __eq__(self, other: object | Xml):
+        other_element = Xml.get_value(other)
         return self.element == other_element
 
-    def __gt__(self, other: object | XML):
-        other_element = XML.get_value(other)
+    def __gt__(self, other: object | Xml):
+        other_element = Xml.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element > other_element  # type: ignore
 
-    def __lt__(self, other: object | XML):
-        other_element = XML.get_value(other)
+    def __lt__(self, other: object | Xml):
+        other_element = Xml.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element < other_element  # type: ignore
 
-    def __gte__(self, other: object | XML):
-        other_element = XML.get_value(other)
+    def __gte__(self, other: object | Xml):
+        other_element = Xml.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element >= other_element  # type: ignore
 
-    def __lte__(self, other: object | XML):
-        other_element = XML.get_value(other)
+    def __lte__(self, other: object | Xml):
+        other_element = Xml.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element <= other_element  # type: ignore
 
-    def xpath(self, query: str) -> IterContainer[XML[Any]]:
+    def xpath(self, query: str) -> IterContainer[Xml[Any]]:
         if not isinstance(self.element, etree._Element):
             return IterContainer()
 
-        res = []
-        try:
-            res = self.element.xpath(query, namespaces=self.element.nsmap)  # type: ignore
-        except etree.XPathEvalError as e:
-            # Sometimes different namespaces are used, like 'bpmn' or 'bpmn2'. I don't want a crash in that situation.
-            if str(e) != "Undefined namespace prefix":
-                raise
+        res = self.element.xpath(query, namespaces=self.nsmap)
 
         return IterContainer(res if isinstance(res, list) else [res]).map(
-            lambda element: XML(element, self.file_path, self.remote_url)
+            lambda element: Xml(element, self.file_path, self.remote_url)
         )
 
     @overload
-    def __getitem__(self, key: str) -> XML | None: ...
+    def __getitem__(self, key: str) -> Xml | None: ...
     @overload
-    def __getitem__(self, key: tuple[str, int]) -> XML: ...
+    def __getitem__(self, key: tuple[str, int]) -> Xml: ...
     @overload
-    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[XML]: ...
+    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[Xml]: ...
     def __getitem__(self, key: str | tuple[str, int] | tuple[str, slice]):
         if isinstance(key, str):
             return self.xpath(key).first
         (query, slice_key) = key
         return self.xpath(query)[slice_key]
+
+
+class ProcessTask(Xml):
+    def __init__(self, xml: etree._Element | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(xml, file_path, remote_url)
+
+    @cached_property
+    def type(self):
+        # Checks for <altinn:taskType>...</altinn:taskType> element and altinn:taskType="..." attribute
+        value = self.xpath(".//altinn:taskType/text() | ./@altinn:tasktype").first
+        if value is not None:
+            return str(value)
+
+    @cached_property
+    def id(self):
+        value = self.xpath("./@id").first
+        if value is not None:
+            return str(value)
+
+
+class Process(Xml):
+    def __init__(self, xml: bytes | None = None, file_path: str | None = None, remote_url: str | None = None):
+        super().__init__(xml, file_path, remote_url)
+
+    @cached_property
+    def tasks(self):
+        return self.xpath(".//bpmn:task | .//bpmn2:task").map(
+            lambda x: ProcessTask(cast(etree._Element, x.element), x.file_path, x.remote_url)
+        )

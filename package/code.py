@@ -1,4 +1,5 @@
 from __future__ import annotations
+import random, string
 from functools import cached_property
 from pathlib import Path
 from typing import Literal, cast
@@ -82,9 +83,10 @@ class Code[L: CodeLanguage]:
             else {}
         )
         line_settings = {"linenos": "inline", "linenostart": self.lines[0] if self.lines is not None else 1}
-        settings = {"wrapcode": True, **title_settings, **line_settings}
+        class_name = "".join(random.choices(string.ascii_letters, k=16))
+        settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings, **line_settings}
         fmt = HtmlFormatter(**settings)
-        style = "<style>{}</style>".format(fmt.get_style_defs(".output_html"))
+        style = "<style>{}</style>".format(fmt.get_style_defs())
         return style + highlight(self.text, lexer, fmt)
 
     def __eq__(self, other: object | Code):

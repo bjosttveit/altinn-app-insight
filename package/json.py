@@ -1,4 +1,5 @@
 from __future__ import annotations
+import random, string
 
 import json
 from pathlib import Path
@@ -73,9 +74,10 @@ class Json[J = object]:
             if self.file_path is not None
             else {}
         )
-        settings = {"wrapcode": True, **title_settings}
+        class_name = "".join(random.choices(string.ascii_letters, k=16))
+        settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings}
         fmt = HtmlFormatter(**settings)
-        style = "<style>{}</style>".format(fmt.get_style_defs(".output_html"))
+        style = "<style>{}</style>".format(fmt.get_style_defs())
         return style + highlight(json.dumps(self.json, indent=4), lexer, fmt)
 
     @staticmethod

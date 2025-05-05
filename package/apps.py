@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
-from package.code import Code, Html, Xml
+import package.code as code
+from package.code import Code
 from package.cs import CsCode, ProgramCs
 from package.html import tabulate_html
-from package.xml import XML
+from package.xml import Process, Xml
 
 from .iter import IterContainer, IterController
 from .json import Appsettings, Json, TextResource
@@ -279,7 +280,7 @@ class App:
         return self.files_matching(r"/App/Program.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
 
     @cached_property
-    def index_cshtml(self) -> Code[Html]:
+    def index_cshtml(self) -> Code[code.Html]:
         return (
             self.files_matching(r"/App/views/Home/Index.cshtml$")
             .map(lambda args: Code.html(*args))
@@ -287,23 +288,23 @@ class App:
         )
 
     @cached_property
-    def process(self) -> XML:
+    def process(self) -> Process:
         return (
             self.files_matching(r"/App/config/process/process.bpmn")
-            .map(lambda args: XML(*args))
-            .first_or_default(XML())
+            .map(lambda args: Process(*args))
+            .first_or_default(Process())
         )
 
     @cached_property
-    def policy(self) -> XML:
+    def policy(self) -> Xml:
         return (
             self.files_matching(r"/App/config/authorization/policy.xml")
-            .map(lambda args: XML(*args))
-            .first_or_default(XML())
+            .map(lambda args: Xml(*args))
+            .first_or_default(Xml())
         )
 
     @cached_property
-    def csproj(self) -> IterContainer[Code[Xml]]:
+    def csproj(self) -> IterContainer[Code[code.Xml]]:
         return (
             self.files_matching(r"/App/[^/]+.csproj$")
             .map(lambda args: Code.xml(*args))
