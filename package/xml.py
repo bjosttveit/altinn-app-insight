@@ -1,5 +1,5 @@
 from __future__ import annotations
-import random, string
+import random, string, re
 from functools import cached_property
 from typing import cast, overload, Any
 from lxml import etree
@@ -45,13 +45,27 @@ class Xml[X = etree._Element]:
         if self.file_path is not None:
             return Path(self.file_path).name
 
+    @property
+    def lines(self):
+        if not isinstance(self.element, etree._Element) or self.text is None:
+            return None
+        start = self.element.sourceline
+        end = start + len(self.text.splitlines()) - 1
+        return [self.element.sourceline, end]
+
+    @property
+    def remote_url_lines(self):
+        if self.lines is None:
+            return self.remote_url
+        return f"{self.remote_url}#L{self.lines[0]}-L{self.lines[1]}"
+
     @cached_property
     def text(self):
         if self.element is None:
             return None
 
         if isinstance(self.element, etree._Element):
-            return etree.tostring(self.element, encoding=str, pretty_print=True)
+            return strip_ns_declarations(etree.tostring(self.element, encoding=str, pretty_print=True, with_tail=False))
 
         return str(self.element)
 
@@ -75,11 +89,11 @@ class Xml[X = etree._Element]:
     def _repr_html_(self):
         lexer = get_lexer_by_name("xml")
         title_settings = (
-            {"filename": file_name_html(self.file_path, self.remote_url)} if self.file_path is not None else {}
+            {"filename": file_name_html(self.file_path, self.remote_url_lines)} if self.file_path is not None else {}
         )
-
+        line_settings = {"linenos": "inline", "linenostart": self.lines[0]} if self.lines is not None else {}
         class_name = "".join(random.choices(string.ascii_letters, k=16))
-        settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings}
+        settings = {"wrapcode": True, "style": "monokai", "cssclass": class_name, **title_settings, **line_settings}
         fmt = HtmlFormatter(**settings)
         style = "<style>{}</style>".format(fmt.get_style_defs())
         return style + highlight(self.text, lexer, fmt)
@@ -139,6 +153,10 @@ class Xml[X = etree._Element]:
             return self.xpath(key).first
         (query, slice_key) = key
         return self.xpath(query)[slice_key]
+
+def strip_ns_declarations(xml_str: str):
+    return re.sub(r'\s(xmlns:[\w\d_\-.]+|targetNamespace)="[^"]*"', "", xml_str)
+
 
 
 class ProcessTask(Xml):
