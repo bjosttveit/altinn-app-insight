@@ -13,7 +13,7 @@ from pygments.lexers import get_lexer_by_name
 import jq
 import rapidjson
 
-from package.html import file_name_html
+from package.html_output import file_name_html
 
 from .iter import IterContainer
 

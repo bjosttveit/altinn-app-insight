@@ -6,7 +6,7 @@ from numpy.typing import ArrayLike
 
 from package.code import Code, Html
 from package.cs import CsCode, ProgramCs
-from package.html import tabulate_html
+from package.html_output import tabulate_html
 from package.xml import Process, Xml
 
 from .iter import IterContainer, IterController

@@ -9,7 +9,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 
-from package.html import file_name_html
+from package.html_output import file_name_html
 from package.iter import IterContainer
 
 parser = etree.XMLParser(remove_blank_text=True)

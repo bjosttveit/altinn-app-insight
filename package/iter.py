@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Callable, Sequence, overload
 
-from .html import html
+from package.html_output import html
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
