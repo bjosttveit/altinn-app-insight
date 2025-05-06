@@ -23,7 +23,7 @@ from .layout_sets import (
 )
 from .plotting import setup_plot
 from .repo import Environment, StudioEnvironment, VersionLock
-from .version import Version
+from .version import NullableStr, Version
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
@@ -320,6 +320,16 @@ class App:
             self.csproj.flat_map(
                 lambda csproj: csproj.xpath(
                     r'.//PackageReference[re:test(@Include, "^Altinn\.App\.(Core|Api|Common)(\.Experimental)?$", "i")]/@Version'
+                ).map(lambda value: value.text)
+            ).first
+        )
+
+    @cached_property
+    def dotnet_version(self) -> NullableStr:
+        return NullableStr(
+            self.csproj.flat_map(
+                lambda csproj: csproj.xpath(
+                    ".//TargetFramework/text()"
                 ).map(lambda value: value.text)
             ).first
         )

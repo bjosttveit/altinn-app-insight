@@ -7,6 +7,56 @@ import re
 VERSION_REGEX = r"^(\d+)(.(\d+))?(.(\d+))?(-(.+))?$"
 
 
+class NullableStr:
+    def __init__(self, value: str | None):
+        self.value = value
+
+    @staticmethod
+    def from_value(value: Any):
+        if isinstance(value, NullableStr):
+            return value
+        if isinstance(value, str):
+            return NullableStr(value)
+        return NullableStr(None)
+
+    @property
+    def exists(self):
+        return self.value is not None
+
+    def __repr__(self):
+        return str(self.value)
+
+    def __le__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        return self == other or self < other
+
+    def __ge__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        return self == other or self > other
+
+    def __eq__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        return self.value == other.value
+
+    def __ne__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        return self.value != other.value
+
+    """ Assuming that None is the smallest value """
+
+    def __lt__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        if self.value is None or other.value is None:
+            return other.exists
+        return self.value < other.value
+
+    def __gt__(self, other_value):
+        other = NullableStr.from_value(other_value)
+        if self.value is None or other.value is None:
+            return self.exists
+        return self.value > other.value
+
+
 class NullableInt:
     def __init__(self, value: int | str | None):
         if isinstance(value, str):
