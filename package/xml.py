@@ -27,6 +27,7 @@ default_ns_map = {
     "camunda": "http://camunda.org/schema/1.0/bpmn",
     "xacml": "urn:oasis:names:tc:xacml:3.0:core:schema:wd-17",
     "xsl": "http://www.w3.org/2001/XMLSchema-instance",
+    "re": "http://exslt.org/regular-expressions",  # Allows the use of re:test, re:match, and re:replace functions
 }
 
 
@@ -52,7 +53,7 @@ class Xml[X = etree._Element]:
         if isinstance(self.element, etree._Element):
             return etree.tostring(self.element, encoding=str, pretty_print=True)
 
-        return self.element
+        return str(self.element)
 
     @cached_property
     def nsmap(self):

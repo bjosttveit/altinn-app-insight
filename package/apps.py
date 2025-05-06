@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
-import package.code as code
-from package.code import Code
+from package.code import Code, Html
 from package.cs import CsCode, ProgramCs
 from package.html import tabulate_html
 from package.xml import Process, Xml
@@ -280,7 +279,7 @@ class App:
         return self.files_matching(r"/App/Program.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
 
     @cached_property
-    def index_cshtml(self) -> Code[code.Html]:
+    def index_cshtml(self) -> Code[Html]:
         return (
             self.files_matching(r"/App/views/Home/Index.cshtml$")
             .map(lambda args: Code.html(*args))
@@ -304,12 +303,8 @@ class App:
         )
 
     @cached_property
-    def csproj(self) -> IterContainer[Code[code.Xml]]:
-        return (
-            self.files_matching(r"/App/[^/]+.csproj$")
-            .map(lambda args: Code.xml(*args))
-            .filter(lambda file: file.exists)
-        )
+    def csproj(self) -> IterContainer[Xml]:
+        return self.files_matching(r"/App/[^/]+.csproj$").map(lambda args: Xml(*args)).filter(lambda file: file.exists)
 
     @cached_property
     def frontend_version(self) -> Version:
@@ -323,9 +318,9 @@ class App:
     def backend_version(self) -> Version:
         return Version(
             self.csproj.flat_map(
-                lambda file: file.find_all(
-                    r'(?i)Include="Altinn\.App\.(Core|Api|Common)(\.Experimental)?"\s*Version="([a-zA-Z0-9\-.]+)"', 3
-                )
+                lambda csproj: csproj.xpath(
+                    r'.//PackageReference[re:test(@Include, "^Altinn\.App\.(Core|Api|Common)(\.Experimental)?$", "i")]/@Version'
+                ).map(lambda value: value.text)
             ).first
         )
 
