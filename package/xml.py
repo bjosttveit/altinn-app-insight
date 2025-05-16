@@ -3,6 +3,7 @@ import random, string, re
 from functools import cached_property
 from typing import cast, overload, Any
 from lxml import etree
+from lxml.etree import _Element
 from pathlib import Path
 
 from pygments import highlight
@@ -31,12 +32,12 @@ default_ns_map = {
 }
 
 
-class Xml[X = etree._Element]:
-    def __init__(self, xml: bytes | X | None = None, file_path: str | None = None, remote_url: str | None = None):
-        if isinstance(xml, bytes):
-            self.element = etree.fromstring(xml, parser=parser)
+class Xml[X = _Element]:
+    def __init__(self, element: bytes | X | None = None, file_path: str | None = None, remote_url: str | None = None):
+        if isinstance(element, bytes):
+            self.element = etree.fromstring(element, parser=parser)
         else:
-            self.element = xml
+            self.element = element
         self.file_path = file_path
         self.remote_url = remote_url
 
@@ -47,7 +48,7 @@ class Xml[X = etree._Element]:
 
     @property
     def lines(self):
-        if not isinstance(self.element, etree._Element) or self.text is None:
+        if not isinstance(self.element, _Element) or self.text is None:
             return None
         start = self.element.sourceline
         end = start + len(self.text.splitlines()) - 1
@@ -64,7 +65,7 @@ class Xml[X = etree._Element]:
         if self.element is None:
             return None
 
-        if isinstance(self.element, etree._Element):
+        if isinstance(self.element, _Element):
             return strip_ns_declarations(etree.tostring(self.element, encoding=str, pretty_print=True, with_tail=False))
 
         return str(self.element)
@@ -84,7 +85,7 @@ class Xml[X = etree._Element]:
         return str(self.text)
 
     def _repr_inline_(self) -> bool:
-        return not (isinstance(self.element, etree._Element))
+        return not (isinstance(self.element, _Element))
 
     def _repr_html_(self):
         lexer = get_lexer_by_name("xml")
@@ -133,7 +134,7 @@ class Xml[X = etree._Element]:
         return self.element <= other_element  # type: ignore
 
     def xpath(self, query: str) -> IterContainer[Xml[Any]]:
-        if not isinstance(self.element, etree._Element):
+        if not isinstance(self.element, _Element):
             return IterContainer()
 
         res = self.element.xpath(query, namespaces=self.nsmap)
@@ -160,7 +161,7 @@ def strip_ns_declarations(xml_str: str):
 
 
 class ProcessTask(Xml):
-    def __init__(self, xml: etree._Element | None = None, file_path: str | None = None, remote_url: str | None = None):
+    def __init__(self, xml: _Element | None = None, file_path: str | None = None, remote_url: str | None = None):
         super().__init__(xml, file_path, remote_url)
 
     @cached_property
@@ -184,5 +185,5 @@ class Process(Xml):
     @cached_property
     def tasks(self):
         return self.xpath(".//bpmn:task | .//bpmn2:task").map(
-            lambda x: ProcessTask(cast(etree._Element, x.element), x.file_path, x.remote_url)
+            lambda x: ProcessTask(cast(_Element, x.element), x.file_path, x.remote_url)
         )
