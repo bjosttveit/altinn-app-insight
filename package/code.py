@@ -14,8 +14,7 @@ from package.iter import IterContainer
 
 type Js = Literal["js"]
 type Cs = Literal["cs"]
-type Html = Literal["html"]
-type CodeLanguage = Js | Cs | Html
+type CodeLanguage = Js | Cs
 type Lines = tuple[int, int] | None
 
 
@@ -48,12 +47,6 @@ class Code[L: CodeLanguage]:
         content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None, lines: Lines = None
     ) -> Code[Js]:
         return Code("js", content, file_path, remote_url, lines)
-
-    @staticmethod
-    def html(
-        content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None, lines: Lines = None
-    ) -> Code[Html]:
-        return Code("html", content, file_path, remote_url, lines)
 
     @property
     def file_name(self):

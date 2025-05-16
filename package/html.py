@@ -1,8 +1,9 @@
 from __future__ import annotations
-import random, string, re
+import random, string
 from functools import cache, cached_property
-from typing import cast, overload, Any
-from lxml import etree
+from typing import overload, Any
+
+from lxml import html
 from lxml.etree import _Element
 from elementpath import Selector
 from elementpath.xpath3 import XPath3Parser
@@ -15,28 +16,13 @@ from pygments.lexers import get_lexer_by_name
 from package.html_output import file_name_html
 from package.iter import IterContainer
 
-parser = etree.XMLParser(remove_blank_text=True)
-
-# lxml raises an exception if you try to query a missing namespace
-ns_map = {
-    "xsi": "http://www.w3.org/2001/XMLSchema-instance",
-    "altinn": "http://altinn.no/process",
-    "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
-    "bpmndi": "http://www.omg.org/spec/BPMN/20100524/DI",
-    "dc": "http://www.omg.org/spec/DD/20100524/DC",
-    "di": "http://www.omg.org/spec/DD/20100524/DI",
-    "bpmn2": "http://www.omg.org/spec/BPMN/20100524/MODEL",
-    "modeler": "http://camunda.org/schema/modeler/1.0",
-    "camunda": "http://camunda.org/schema/1.0/bpmn",
-    "xacml": "urn:oasis:names:tc:xacml:3.0:core:schema:wd-17",
-    "xsl": "http://www.w3.org/2001/XMLSchema-instance",
-}
+parser = html.HTMLParser(remove_blank_text=True)
 
 
-class Xml[X = _Element]:
+class Html[X = _Element]:
     def __init__(self, element: bytes | X | None = None, file_path: str | None = None, remote_url: str | None = None):
         if isinstance(element, bytes):
-            self.element = etree.fromstring(element, parser=parser)
+            self.element = html.fromstring(element, parser=parser)
         else:
             self.element = element
         self.file_path = file_path
@@ -68,7 +54,7 @@ class Xml[X = _Element]:
             return None
 
         if isinstance(self.element, _Element):
-            return strip_ns_declarations(etree.tostring(self.element, encoding=str, pretty_print=True, with_tail=False))
+            return html.tostring(self.element, encoding=str, pretty_print=True, with_tail=False)
 
         return str(self.element)
 
@@ -83,7 +69,7 @@ class Xml[X = _Element]:
         return not (isinstance(self.element, _Element))
 
     def _repr_html_(self):
-        lexer = get_lexer_by_name("xml")
+        lexer = get_lexer_by_name("html")
         title_settings = (
             {"filename": file_name_html(self.file_path, self.remote_url_lines)} if self.file_path is not None else {}
         )
@@ -96,34 +82,34 @@ class Xml[X = _Element]:
 
     @staticmethod
     def get_value(obj: Any):
-        if isinstance(obj, Xml):
+        if isinstance(obj, Html):
             return obj.element
         return obj
 
-    def __eq__(self, other: object | Xml):
-        other_element = Xml.get_value(other)
+    def __eq__(self, other: object | Html):
+        other_element = Html.get_value(other)
         return self.element == other_element
 
-    def __gt__(self, other: object | Xml):
-        other_element = Xml.get_value(other)
+    def __gt__(self, other: object | Html):
+        other_element = Html.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element > other_element  # type: ignore
 
-    def __lt__(self, other: object | Xml):
-        other_element = Xml.get_value(other)
+    def __lt__(self, other: object | Html):
+        other_element = Html.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element < other_element  # type: ignore
 
-    def __gte__(self, other: object | Xml):
-        other_element = Xml.get_value(other)
+    def __gte__(self, other: object | Html):
+        other_element = Html.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element >= other_element  # type: ignore
 
-    def __lte__(self, other: object | Xml):
-        other_element = Xml.get_value(other)
+    def __lte__(self, other: object | Html):
+        other_element = Html.get_value(other)
         if not self.exists or other_element is None:
             return False
         return self.element <= other_element  # type: ignore
@@ -131,59 +117,26 @@ class Xml[X = _Element]:
     @cache
     @staticmethod
     def make_selector(query: str) -> Selector:
-        return Selector(query, parser=XPath3Parser, namespaces=ns_map)
+        return Selector(query, parser=XPath3Parser)
 
-    def xpath(self, query: str) -> IterContainer[Xml[Any]]:
+    def xpath(self, query: str) -> IterContainer[Html[Any]]:
         if not isinstance(self.element, _Element):
             return IterContainer()
 
-        res = Xml.make_selector(query).select(self.element)
+        res = Html.make_selector(query).select(self.element)
 
         return IterContainer(res if isinstance(res, list) else [res]).map(
-            lambda element: Xml(element, self.file_path, self.remote_url)
+            lambda element: Html(element, self.file_path, self.remote_url)
         )
 
     @overload
-    def __getitem__(self, key: str) -> Xml | None: ...
+    def __getitem__(self, key: str) -> Html | None: ...
     @overload
-    def __getitem__(self, key: tuple[str, int]) -> Xml: ...
+    def __getitem__(self, key: tuple[str, int]) -> Html: ...
     @overload
-    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[Xml]: ...
+    def __getitem__(self, key: tuple[str, slice]) -> IterContainer[Html]: ...
     def __getitem__(self, key: str | tuple[str, int] | tuple[str, slice]):
         if isinstance(key, str):
             return self.xpath(key).first
         (query, slice_key) = key
         return self.xpath(query)[slice_key]
-
-
-def strip_ns_declarations(xml_str: str):
-    return re.sub(r'\s(xmlns:[\w\d_\-.]+|targetNamespace)="[^"]*"', "", xml_str)
-
-
-class ProcessTask(Xml):
-    def __init__(self, xml: _Element | None = None, file_path: str | None = None, remote_url: str | None = None):
-        super().__init__(xml, file_path, remote_url)
-
-    @cached_property
-    def type(self):
-        # Checks for <altinn:taskType>...</altinn:taskType> element and altinn:taskType="..." attribute
-        value = self.xpath(".//altinn:taskType/text() | ./@altinn:tasktype").first
-        if value is not None:
-            return str(value)
-
-    @cached_property
-    def id(self):
-        value = self.xpath("./@id").first
-        if value is not None:
-            return str(value)
-
-
-class Process(Xml):
-    def __init__(self, xml: bytes | None = None, file_path: str | None = None, remote_url: str | None = None):
-        super().__init__(xml, file_path, remote_url)
-
-    @cached_property
-    def tasks(self):
-        return self.xpath(".//bpmn:task | .//bpmn2:task").map(
-            lambda x: ProcessTask(cast(_Element, x.element), x.file_path, x.remote_url)
-        )

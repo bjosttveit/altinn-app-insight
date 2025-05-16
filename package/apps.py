@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
-from package.code import Code, Html
 from package.cs import CsCode, ProgramCs
+from package.html import Html
 from package.html_output import tabulate_html
 from package.xml import Process, Xml
 
@@ -279,11 +279,9 @@ class App:
         return self.files_matching(r"/App/Program.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
 
     @cached_property
-    def index_cshtml(self) -> Code[Html]:
+    def index_cshtml(self) -> Html:
         return (
-            self.files_matching(r"/App/views/Home/Index.cshtml$")
-            .map(lambda args: Code.html(*args))
-            .first_or_default(Code.html())
+            self.files_matching(r"/App/views/Home/Index.cshtml$").map(lambda args: Html(*args)).first_or_default(Html())
         )
 
     @cached_property
@@ -309,9 +307,11 @@ class App:
     @cached_property
     def frontend_version(self) -> Version:
         return Version(
-            self.index_cshtml.find(
-                r'src="https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js"', 1
+            self.index_cshtml.xpath(
+                r'//script/@src/analyze-string(., "^https://altinncdn.no/toolkits/altinn-app-frontend/([a-zA-Z0-9\-.]+)/altinn-app-frontend.js$")/fn:match/fn:group[@nr=1]/text()',
             )
+            .map(lambda value: value.text)
+            .first
         )
 
     @cached_property
@@ -319,7 +319,7 @@ class App:
         return Version(
             self.csproj.flat_map(
                 lambda csproj: csproj.xpath(
-                    r'.//PackageReference[re:test(@Include, "^Altinn\.App\.(Core|Api|Common)(\.Experimental)?$", "i")]/@Version'
+                    r'.//PackageReference[matches(@Include, "^Altinn\.App\.(Core|Api|Common)(\.Experimental)?$", "i")]/@Version'
                 ).map(lambda value: value.text)
             ).first
         )
@@ -328,9 +328,7 @@ class App:
     def dotnet_version(self) -> NullableStr:
         return NullableStr(
             self.csproj.flat_map(
-                lambda csproj: csproj.xpath(
-                    ".//TargetFramework/text()"
-                ).map(lambda value: value.text)
+                lambda csproj: csproj.xpath(".//TargetFramework/text()").map(lambda value: value.text)
             ).first
         )
 

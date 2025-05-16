@@ -17,6 +17,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
+    { name = "elementpath" },
     { name = "httpx", extra = ["http2"] },
     { name = "ipympl" },
     { name = "jq" },
@@ -44,6 +45,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.1.0" },
+    { name = "elementpath", specifier = ">=5.0.1" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
     { name = "ipympl", specifier = ">=0.9.6" },
     { name = "jq", specifier = ">=1.8.0" },
@@ -383,6 +385,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604 },
+]
+
+[[package]]
+name = "elementpath"
+version = "5.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ea/3d/0be6a0e373ac54bd53ab6c3b0722de9752dbd62e19d3d4d0f3f70ecbb246/elementpath-5.0.1.tar.gz", hash = "sha256:d3e4807b7e38e190e382eefef93f35ce6f71adf63b33e3f01d0e11f22e5d5cc7", size = 363233 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/09/fbd26adb51ccd29fa65798fe9bf6e8a73720e37e437ac2cf1d51133bd1f5/elementpath-5.0.1-py3-none-any.whl", hash = "sha256:334f796578d1d273e99838b6a731d265985ea9ab399e22b74ea1c3a3faa73c83", size = 245130 },
 ]
 
 [[package]]
