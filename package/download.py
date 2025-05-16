@@ -135,7 +135,7 @@ class BaseQueryClient:
                     raise
                 if self.debug:
                     self.console.print(f"[yellow] download_file: retrying url '{url}', attempt {attempt + 1}")
-                return self.download_file(url, file_path, token, on_progress, attempt + 1)
+                return await self.download_file(url, file_path, token, on_progress, attempt + 1)
 
 
 class QueryClient(BaseQueryClient):
@@ -232,7 +232,7 @@ class QueryClient(BaseQueryClient):
 
     def write_version_lock(self, version_lock: VersionLock):
         with open(self.lock_path, "w") as f:
-            json.dump(version_lock, f, indent=2)
+            json.dump(dict(sorted(version_lock.items())), f, indent=2)
 
         # Count the total number of successful apps for each environment
         is_success: Callable[[LockData], bool] = lambda lock_data: lock_data["status"] == "success"
