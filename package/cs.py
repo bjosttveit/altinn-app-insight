@@ -1,6 +1,5 @@
 from __future__ import annotations
 from functools import cache, cached_property
-from itertools import starmap
 from typing import NotRequired, TypedDict, Unpack, cast, Sequence
 import tree_sitter_c_sharp as ts_cs
 from tree_sitter import Language, Node, Parser, Query
@@ -66,11 +65,11 @@ class CsCode(Code[Cs]):
 
         interfaces = (
             "\n".join(
-                starmap(
-                    lambda i, interface: f"""
-                        (identifier) @interface.{i}.name
-                        (#eq? @interface.{i}.name "{interface}")""",
-                    enumerate(implements),
+                map(
+                    lambda interface: f"""
+                        (identifier) @interface.name
+                        (#any-eq? @interface.name "{interface}")""",
+                    implements,
                 )
             )
             if implements is not None
@@ -88,11 +87,11 @@ class CsCode(Code[Cs]):
 
         modifiers_restriction = (
             "\n".join(
-                starmap(
-                    lambda i, modifier: f"""
-                        (modifier) @modifier.{i}.name
-                        (#eq? @modifier.{i}.name "{modifier}")""",
-                    enumerate(modifiers),
+                map(
+                    lambda modifier: f"""
+                        (modifier) @modifier.name
+                        (#any-eq? @modifier.name "{modifier}")""",
+                    modifiers,
                 )
             )
             if modifiers is not None
@@ -123,11 +122,11 @@ class CsCode(Code[Cs]):
         returns_restriction = f'(#eq? @method.returns "{returns}")' if returns is not None else ""
         modifiers_restriction = (
             "\n".join(
-                starmap(
-                    lambda i, modifier: f"""
-                        (modifier) @modifier.{i}.name
-                        (#eq? @modifier.{i}.name "{modifier}")""",
-                    enumerate(modifiers),
+                map(
+                    lambda modifier: f"""
+                        (modifier) @modifier.name
+                        (#any-eq? @modifier.name "{modifier}")""",
+                    modifiers,
                 )
             )
             if modifiers is not None
@@ -160,12 +159,12 @@ class CsCode(Code[Cs]):
 
         assignments = (
             "\n".join(
-                starmap(
-                    lambda i, name: f"""
+                map(
+                    lambda name: f"""
                     (assignment_expression
-                        left: (identifier) @field.{i}.name
-                        (#eq? @field.{i}.name "{name}"))""",
-                    enumerate(fields),
+                        left: (identifier) @field.name
+                        (#any-eq? @field.name "{name}"))""",
+                    fields,
                 )
             )
             if fields is not None
