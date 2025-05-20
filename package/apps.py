@@ -394,10 +394,9 @@ class Apps(IterController[App]):
 
         return func
 
-    @cached_property
-    def data_table(self):
+    def data_table(self, raw=False):
         headers = ["Env", "Org", "App", *self.list[0].data_keys]
-        rows = [[app.env, app.org, app.app, *map(lambda value: str(value), app.data_values)] for app in self.list]
+        rows = [[app.env, app.org, app.app, *map(lambda value: value if raw else str(value), app.data_values)] for app in self.list]
         return headers, rows
 
     def table(self):
@@ -405,7 +404,7 @@ class Apps(IterController[App]):
             print("Count: 0")
             return self
 
-        headers, rows = self.data_table
+        headers, rows = self.data_table(raw=True)
         table = tabulate_html(rows, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
@@ -419,13 +418,13 @@ class Apps(IterController[App]):
         if self.length == 0:
             return "Count: 0"
 
-        headers, rows = self.data_table
+        headers, rows = self.data_table()
         table = tabulate(rows, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
 
     def csv(self, file_name="output"):
-        headers, rows = self.data_table
+        headers, rows = self.data_table()
 
         with io.StringIO() as buffer:
             csv_writer = csv.writer(buffer)
@@ -573,10 +572,9 @@ class GroupedApps(IterController[Apps]):
         fig.show()
         return self
 
-    @cached_property
-    def data_table(self):
+    def data_table(self, raw=False):
         headers = [*self.list[0].group_keys, *self.list[0].data_keys]
-        rows = [[*map(lambda value: str(value), group.group_values), *map(lambda value: str(value), group.data_values)] for group in self.list]
+        rows = [[*map(lambda value: str(value), group.group_values), *map(lambda value: value if raw else str(value), group.data_values)] for group in self.list]
         return headers, rows
 
     def table(self):
@@ -584,7 +582,7 @@ class GroupedApps(IterController[Apps]):
             print("Count: 0")
             return self
 
-        headers, rows = self.data_table
+        headers, rows = self.data_table(raw=True)
         table = tabulate_html(rows, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
@@ -598,13 +596,13 @@ class GroupedApps(IterController[Apps]):
         if self.length == 0:
             return "Count: 0"
 
-        headers, rows = self.data_table
+        headers, rows = self.data_table()
         table = tabulate(rows, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
 
     def csv(self, file_name="output"):
-        headers, rows = self.data_table
+        headers, rows = self.data_table()
 
         with io.StringIO() as buffer:
             csv_writer = csv.writer(buffer)
