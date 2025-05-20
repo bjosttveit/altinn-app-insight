@@ -6,7 +6,7 @@ from numpy.typing import ArrayLike
 
 from package.cs import CsCode, ProgramCs
 from package.html import Html
-from package.html_output import tabulate_html
+from package.html_output import tabulate_html, JupyterHTMLStr
 from package.xml import Process, Xml
 
 from .iter import IterContainer, IterController
@@ -28,6 +28,9 @@ from .version import NullableStr, Version
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
+import base64
+import csv
+import io
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -35,7 +38,7 @@ from copy import copy
 from functools import cached_property
 from io import BufferedReader
 from pathlib import Path
-from typing import Callable, TypeVar, cast
+from typing import Callable, cast
 from zipfile import ZipFile
 
 from IPython.display import display_html
@@ -59,6 +62,10 @@ class App:
         return f"{self.env}-{self.org}-{self.app}"
 
     @property
+    def repo_key(self):
+        return f"{self.org}-{self.app}"
+
+    @property
     def file_name(self):
         return f"{self.key}.zip"
 
@@ -67,15 +74,27 @@ class App:
         return self.app_dir.joinpath(self.file_name)
 
     @property
-    def base_url(self):
+    def app_url(self):
         return (
-            f"https://altinn.studio/repos/{self.org}/{self.app}/src/commit/{self.commit_sha}"
-            if self.studio_env == "prod"
-            else f"https://{self.studio_env}.altinn.studio/repos/{self.org}/{self.app}/src/commit/{self.commit_sha}"
+            f"https://{self.org}.apps.altinn.no/{self.org}/{self.app}"
+            if self.env == "prod"
+            else f"https://{self.org}.apps.{self.env}.altinn.no/{self.org}/{self.app}"
         )
 
-    def get_remote_url(self, file_path: str):
-        return f"{self.base_url}{file_path.removeprefix(self.app)}"
+    @property
+    def repo_url(self):
+        return (
+            f"https://altinn.studio/repos/{self.org}/{self.app}"
+            if self.studio_env == "prod"
+            else f"https://{self.studio_env}.altinn.studio/repos/{self.org}/{self.app}"
+        )
+
+    @property
+    def commit_url(self):
+        return f"{self.repo_url}/src/commit/{self.commit_sha}"
+
+    def get_remote_file_url(self, file_path: str):
+        return f"{self.commit_url}{file_path.removeprefix(self.app)}"
 
     def __repr__(self):
         headers = ["Env", "Org", "App", *self.data_keys]
@@ -156,13 +175,13 @@ class App:
         return (
             IterContainer(self.files)
             .filter(lambda path: re.search(file_pattern, path) is not None)
-            .map(lambda path: (self.content.read(path), path, self.get_remote_url(path)))
+            .map(lambda path: (self.content.read(path), path, self.get_remote_file_url(path)))
         )
 
     @cached_property
     def application_metadata(self) -> Json:
         return (
-            self.files_matching(r"/App/config/applicationmetadata.json$")
+            self.files_matching(r"/App/config/applicationmetadata\.json$")
             .map(lambda args: Json(*args))
             .first_or_default(Json())
         )
@@ -170,7 +189,7 @@ class App:
     @cached_property
     def layout_sets(self) -> LayoutSets:
         layout_sets = (
-            self.files_matching(r"/App/ui/layout-sets.json$")
+            self.files_matching(r"/App/ui/layout-sets\.json$")
             .map(lambda args: LayoutSets(*args))
             .first_or_default(LayoutSets())
         )
@@ -188,7 +207,7 @@ class App:
                 lambda set_json, base_path: (
                     # Multiple layout files, in /ui/(.+/)?layouts/
                     (set_json, base_path, multi_path)
-                    if self.file_exists(multi_path := rf"{base_path}layouts/.+\.json$")
+                    if self.file_exists(multi_path := rf"{base_path}layouts/[^/]+\.json$")
                     else (
                         # Single layout file, in /ui/FormLayout.json
                         (set_json, base_path, single_path)
@@ -272,22 +291,26 @@ class App:
 
     @cached_property
     def cs(self) -> IterContainer[CsCode]:
-        return self.files_matching(r"/App/.*\.cs$").map(lambda args: CsCode(*args)).filter(lambda file: file.exists)
+        return self.files_matching(r"\.cs$").map(lambda args: CsCode(*args)).filter(lambda file: file.exists)
 
     @cached_property
     def program_cs(self) -> ProgramCs:
-        return self.files_matching(r"/App/Program.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
+        return (
+            self.files_matching(r"/App/Program\.cs$").map(lambda args: ProgramCs(*args)).first_or_default(ProgramCs())
+        )
 
     @cached_property
     def index_cshtml(self) -> Html:
         return (
-            self.files_matching(r"/App/views/Home/Index.cshtml$").map(lambda args: Html(*args)).first_or_default(Html())
+            self.files_matching(r"/App/views/Home/Index\.cshtml$")
+            .map(lambda args: Html(*args))
+            .first_or_default(Html())
         )
 
     @cached_property
     def process(self) -> Process:
         return (
-            self.files_matching(r"/App/config/process/process.bpmn")
+            self.files_matching(r"/App/config/process/process\.bpmn$")
             .map(lambda args: Process(*args))
             .first_or_default(Process())
         )
@@ -295,14 +318,14 @@ class App:
     @cached_property
     def policy(self) -> Xml:
         return (
-            self.files_matching(r"/App/config/authorization/policy.xml")
+            self.files_matching(r"/App/config/authorization/policy\.xml$")
             .map(lambda args: Xml(*args))
             .first_or_default(Xml())
         )
 
     @cached_property
     def csproj(self) -> IterContainer[Xml]:
-        return self.files_matching(r"/App/[^/]+.csproj$").map(lambda args: Xml(*args)).filter(lambda file: file.exists)
+        return self.files_matching(r"\.csproj$").map(lambda args: Xml(*args)).filter(lambda file: file.exists)
 
     @cached_property
     def frontend_version(self) -> Version:
@@ -315,22 +338,36 @@ class App:
         )
 
     @cached_property
-    def backend_version(self) -> Version:
-        return Version(
+    def backend_versions(self) -> IterContainer[Version]:
+        return (
             self.csproj.flat_map(
                 lambda csproj: csproj.xpath(
                     r'.//PackageReference[matches(@Include, "^Altinn\.App\.(Core|Api|Common)(\.Experimental)?$", "i")]/@Version'
-                ).map(lambda value: value.text)
-            ).first
+                ).map(lambda value: Version(value.text))
+            )
+            .filter(lambda version: version.exists)
+            .sort(reverse=True)
+            .unique(lambda version: version.value)
+        )
+
+    @cached_property
+    def backend_version(self) -> Version:
+        return self.backend_versions.first_or_default(Version(None))
+
+    @cached_property
+    def dotnet_versions(self) -> IterContainer[NullableStr]:
+        return (
+            self.csproj.flat_map(
+                lambda csproj: csproj.xpath(".//TargetFramework/text()").map(lambda value: NullableStr(value.text))
+            )
+            .filter(lambda version: version.exists)
+            .sort(reverse=True)
+            .unique(lambda version: version.value)
         )
 
     @cached_property
     def dotnet_version(self) -> NullableStr:
-        return NullableStr(
-            self.csproj.flat_map(
-                lambda csproj: csproj.xpath(".//TargetFramework/text()").map(lambda value: value.text)
-            ).first
-        )
+        return self.dotnet_versions.first_or_default(NullableStr(None))
 
 
 class Apps(IterController[App]):
@@ -357,26 +394,49 @@ class Apps(IterController[App]):
 
         return func
 
+    @cached_property
+    def data_table(self):
+        headers = ["Env", "Org", "App", *self.list[0].data_keys]
+        rows = [[app.env, app.org, app.app, *map(lambda value: str(value), app.data_values)] for app in self.list]
+        return headers, rows
+
     def table(self):
         if self.length == 0:
             print("Count: 0")
-            return
+            return self
 
-        headers = ["Env", "Org", "App", *self.list[0].data_keys]
-        data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
-        table = tabulate_html(data, headers=headers)
+        headers, rows = self.data_table
+        table = tabulate_html(rows, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
+        return self
+
+    def text_table(self):
+        print(self)
+        return self
 
     def __repr__(self):
         if self.length == 0:
             return "Count: 0"
 
-        headers = ["Env", "Org", "App", *self.list[0].data_keys]
-        data = [[app.env, app.org, app.app, *app.data_values] for app in self.list]
-        table = tabulate(data, headers=headers, tablefmt="simple_grid")
+        headers, rows = self.data_table
+        table = tabulate(rows, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
+
+    def csv(self, file_name="output"):
+        headers, rows = self.data_table
+
+        with io.StringIO() as buffer:
+            csv_writer = csv.writer(buffer)
+            csv_writer.writerow(headers)
+            csv_writer.writerows(rows)
+            output = buffer.getvalue()
+
+        payload = base64.b64encode(output.encode()).decode()
+        file_name_extension = f"{file_name.removesuffix('.csv')}.csv"
+        display_html(JupyterHTMLStr(f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'))
+        return self
 
     @classmethod
     def init(cls, apps_dir: Path = Path("./data"), max_open_files=100) -> Apps:
@@ -455,7 +515,8 @@ class Apps(IterController[App]):
         map_func = lambda columns, apps: Apps(apps, dict(columns), self.selector)
         return GroupedApps(self.i.group_by(key_func, map_func))
 
-    T = TypeVar("T")
+    def unique_repos(self) -> Apps:
+        return self.with_iterable(self.i.sort(lambda app: app.env).unique(lambda app: app.repo_key))
 
     def map_reduce[T](self, __map_func: Callable[[App], T], reduce_func: Callable[[T, T], T]) -> T | None:
         map_func = App.wrap_open_app(__map_func)
@@ -502,6 +563,7 @@ class GroupedApps(IterController[Apps]):
         fig, ax = setup_plot(title)
         ax.pie(sizes, labels=labels)
         fig.show()
+        return self
 
     def bar(self, title: str | None = None, x: str | tuple[str] | None = None, y: str | None = None):
         labels = self.__get_chart_labels(x)
@@ -509,27 +571,51 @@ class GroupedApps(IterController[Apps]):
         fig, ax = setup_plot(title)
         ax.bar(labels, height=heights)
         fig.show()
+        return self
+
+    @cached_property
+    def data_table(self):
+        headers = [*self.list[0].group_keys, *self.list[0].data_keys]
+        rows = [[*map(lambda value: str(value), group.group_values), *map(lambda value: str(value), group.data_values)] for group in self.list]
+        return headers, rows
 
     def table(self):
         if self.length == 0:
             print("Count: 0")
-            return
+            return self
 
-        headers = [*self.list[0].group_keys, *self.list[0].data_keys]
-        data = [[*group.group_values, *group.data_values] for group in self.list]
-        table = tabulate_html(data, headers=headers)
+        headers, rows = self.data_table
+        table = tabulate_html(rows, headers=headers)
         display_html(table)
         print(f"Count: {self.length}")
+        return self
+
+    def text_table(self):
+        print(self)
+        return self
 
     def __repr__(self):
         if self.length == 0:
             return "Count: 0"
 
-        headers = [*self.list[0].group_keys, *self.list[0].data_keys]
-        data = [[*group.group_values, *group.data_values] for group in self.list]
-        table = tabulate(data, headers=headers, tablefmt="simple_grid")
+        headers, rows = self.data_table
+        table = tabulate(rows, headers=headers, tablefmt="simple_grid")
 
         return f"{table}\nCount: {self.length}"
+
+    def csv(self, file_name="output"):
+        headers, rows = self.data_table
+
+        with io.StringIO() as buffer:
+            csv_writer = csv.writer(buffer)
+            csv_writer.writerow(headers)
+            csv_writer.writerows(rows)
+            output = buffer.getvalue()
+
+        payload = base64.b64encode(output.encode()).decode()
+        file_name_extension = f"{file_name.removesuffix('.csv')}.csv"
+        display_html(JupyterHTMLStr(f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'))
+        return self
 
     @overload
     def __getitem__(self, key: int) -> Apps: ...

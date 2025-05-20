@@ -112,7 +112,7 @@ class NullableInt:
 
 class Version(str):
     def __init__(self, version_string: str | None):
-        self.__version_string = version_string
+        self.value = version_string
         self.__match = re.match(VERSION_REGEX, version_string) if version_string is not None else None
         self.major = NullableInt(self.__match.group(1) if self.__match else None)
         self.minor = NullableInt(self.__match.group(3) if self.__match else None)
@@ -120,7 +120,7 @@ class Version(str):
         self.preview = self.__match.group(7) if self.__match else None
 
     def __repr__(self):
-        return self.__version_string if self.__version_string is not None else "None"
+        return self.value if self.value is not None else "None"
 
     @staticmethod
     def from_value(value: Any):
@@ -140,11 +140,11 @@ class Version(str):
 
     def __ne__(self, other_value):
         other = Version.from_value(other_value)
-        return self.__version_string != other.__version_string
+        return self.value != other.value
 
     def __eq__(self, other_value):
         other = Version.from_value(other_value)
-        return self.__version_string == other.__version_string
+        return self.value == other.value
 
     """ Assuming that None is the smallest value, and that missing components makes it bigger, i.e. 4 > 4.18 """
 
