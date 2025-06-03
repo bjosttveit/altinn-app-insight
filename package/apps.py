@@ -424,6 +424,9 @@ class Apps(IterController[App]):
         return f"{table}\nCount: {self.length}"
 
     def csv(self, file_name="output"):
+        if self.length == 0:
+            return self
+
         headers, rows = self.data_table()
 
         with io.StringIO() as buffer:
@@ -602,6 +605,9 @@ class GroupedApps(IterController[Apps]):
         return f"{table}\nCount: {self.length}"
 
     def csv(self, file_name="output"):
+        if self.length == 0:
+            return self
+
         headers, rows = self.data_table()
 
         with io.StringIO() as buffer:
