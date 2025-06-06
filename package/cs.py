@@ -114,9 +114,15 @@ class CsCode(Code[Cs]):
         name: NotRequired[str]
         returns: NotRequired[str]
         modifiers: NotRequired[Sequence[str]]
+        parameter_types: NotRequired[Sequence[str]]
 
     def method_declarations(self, **kwargs: Unpack[MethodArgs]) -> IterContainer[CsCode]:
-        name, returns, modifiers = kwargs.get("name"), kwargs.get("returns"), kwargs.get("modifiers")
+        name, returns, modifiers, parameter_types = (
+            kwargs.get("name"),
+            kwargs.get("returns"),
+            kwargs.get("modifiers"),
+            kwargs.get("parameter_types"),
+        )
 
         name_restriction = f'(#eq? @method.name "{name}")' if name is not None else ""
         returns_restriction = f'(#eq? @method.returns "{returns}")' if returns is not None else ""
@@ -132,6 +138,19 @@ class CsCode(Code[Cs]):
             if modifiers is not None
             else ""
         )
+        parameter_types_restriction = (
+            "\n".join(
+                map(
+                    lambda parameter_type: f"""
+                        (parameter
+                            type: (identifier) @parameter.type)
+                            (#any-eq? @parameter.type "{parameter_type}")""",
+                    parameter_types,
+                )
+            )
+            if parameter_types is not None
+            else ""
+        )
 
         return IterContainer(
             self.query(
@@ -141,7 +160,9 @@ class CsCode(Code[Cs]):
                     returns: (_) @method.returns
                     {returns_restriction}
                     name: (identifier) @method.name
-                    {name_restriction}) @output
+                    {name_restriction}
+                    parameters: (parameter_list
+                    {parameter_types_restriction})) @output
                 """
             )
         )
