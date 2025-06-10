@@ -99,7 +99,7 @@ class App:
     def __repr__(self):
         headers = ["Env", "Org", "App", *self.data_keys]
         data = [[self.env, self.org, self.app, *self.data_values]]
-        return tabulate(data, headers=headers, tablefmt="simple_grid")
+        return tabulate(data, headers=headers, tablefmt="simple_grid", disable_numparse=True)
 
     def with_data(self, data: dict[str, object]) -> App:
         if self.open:
@@ -419,7 +419,7 @@ class Apps(IterController[App]):
             return "Count: 0"
 
         headers, rows = self.data_table()
-        table = tabulate(rows, headers=headers, tablefmt="simple_grid")
+        table = tabulate(rows, headers=headers, tablefmt="simple_grid", disable_numparse=True)
 
         return f"{table}\nCount: {self.length}"
 
@@ -600,7 +600,7 @@ class GroupedApps(IterController[Apps]):
             return "Count: 0"
 
         headers, rows = self.data_table()
-        table = tabulate(rows, headers=headers, tablefmt="simple_grid")
+        table = tabulate(rows, headers=headers, tablefmt="simple_grid", disable_numparse=True)
 
         return f"{table}\nCount: {self.length}"
 

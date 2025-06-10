@@ -66,6 +66,6 @@ def tabulate_html(_data: Iterable[Iterable[object]], headers: list[str]) -> Jupy
         </style>
         <div class="{className}">
         """
-        + tabulate(data, headers=headers, tablefmt="unsafehtml")
+        + tabulate(data, headers=headers, tablefmt="unsafehtml", disable_numparse=True)
         + "</div>"
     )
