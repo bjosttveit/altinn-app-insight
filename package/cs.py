@@ -172,6 +172,27 @@ class CsCode(Code[Cs]):
             )
         )
 
+    class FunctionInvocationArgs(TypedDict):
+        name: NotRequired[str]
+
+    def function_invocations(self, **kwargs: Unpack[FunctionInvocationArgs]) -> IterContainer[CsCode]:
+        name = kwargs.get("name")
+        name_restriction = f'(#eq? @function.name "{name}")' if name is not None else ""
+
+        return IterContainer(
+            self.query(
+                f"""
+                (invocation_expression
+                    function: [
+                        (identifier) @function.name
+                        (generic_name
+                            (identifier) @function.name)
+                    ]
+                    {name_restriction}) @output
+                """
+            )
+        )
+
     class ObjectArgs(TypedDict):
         type: NotRequired[str | None]
         fields: NotRequired[Sequence[str]]
