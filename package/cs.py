@@ -66,8 +66,13 @@ class CsCode(Code[Cs]):
         interfaces = (
             "\n".join(
                 map(
+                    # TODO: Should this pattern be used elsewhere?
                     lambda interface: f"""
-                        (identifier) @interface.name
+                        [
+                            (identifier) @interface.name
+                            (generic_name
+                                (identifier) @interface.name)
+                        ]
                         (#any-eq? @interface.name "{interface}")""",
                     implements,
                 )
