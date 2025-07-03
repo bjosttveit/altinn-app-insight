@@ -68,7 +68,7 @@ class BaseQueryClient:
 
     async def __aenter__(self):
         self.client = httpx.AsyncClient(
-            http2=True, limits=httpx.Limits(max_connections=20, max_keepalive_connections=20, keepalive_expiry=None)
+            http2=True, limits=httpx.Limits(max_connections=200, max_keepalive_connections=200, keepalive_expiry=None)
         )
         return self
 
@@ -96,7 +96,7 @@ class BaseQueryClient:
             try:
                 res = await self.client.get(url)
                 return res.json()
-            except httpx.ReadTimeout:
+            except (httpx.ReadTimeout, httpx.ProtocolError):
                 # Common source of flaky errors
                 if attempt >= self.max_retries:
                     raise
