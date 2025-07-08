@@ -92,24 +92,24 @@ class BaseQueryClient:
             self.queues[domain].put_nowait(None)
 
     async def fetch_json(self, url: str, attempt=1) -> Any:
-        async with self.request_queue(url):
-            try:
+        try:
+            async with self.request_queue(url):
                 res = await self.client.get(url)
                 return res.json()
-            except (httpx.ReadTimeout, httpx.ProtocolError):
-                # Common source of flaky errors
-                if attempt >= self.max_retries:
-                    raise
-                if self.debug:
-                    self.console.print(f"[yellow] fetch_json: retrying url '{url}', attempt {attempt + 1}")
-                await asyncio.sleep(1.0)
-                return await self.fetch_json(url, attempt + 1)
+        except (httpx.ReadTimeout, httpx.ProtocolError):
+            # Common source of flaky errors
+            if attempt >= self.max_retries:
+                raise
+            if self.debug:
+                self.console.print(f"[yellow] fetch_json: retrying url '{url}', attempt {attempt + 1}")
+            await asyncio.sleep(1.0)
+            return await self.fetch_json(url, attempt + 1)
 
     async def download_file(
         self, url: str, file_path: Path, token: str, on_progress: Callable[[int, int], None] | None = None, attempt=1
     ):
-        async with self.request_queue(url):
-            try:
+        try:
+            async with self.request_queue(url):
                 async with aiofiles.open(file_path, "wb") as f:
                     async with self.client.stream(
                         "GET",
@@ -127,15 +127,16 @@ class BaseQueryClient:
                             if on_progress:
                                 on_progress(response.num_bytes_downloaded, total)
 
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    # This is common, and means it will always fail so no point in retrying
-                    raise
-                if attempt >= self.max_retries:
-                    raise
-                if self.debug:
-                    self.console.print(f"[yellow] download_file: retrying url '{url}', attempt {attempt + 1}")
-                return await self.download_file(url, file_path, token, on_progress, attempt + 1)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404 or e.response.status_code == 401:
+                # 404 is common, and means it will always fail so no point in retrying
+                # 401 means token is invalid
+                raise
+            if attempt >= self.max_retries:
+                raise
+            if self.debug:
+                self.console.print(f"[yellow] download_file: retrying url '{url}', attempt {attempt + 1}")
+            return await self.download_file(url, file_path, token, on_progress, attempt + 1)
 
 
 class QueryClient(BaseQueryClient):
@@ -489,7 +490,12 @@ class QueryClient(BaseQueryClient):
             )
             self.download_success.append(release)
             self.next_version_lock[release.key] = makeLock(release, "success")
-        except:
+        except Exception as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401:
+                self.console.print(
+                    f":x-emoji: [red] Token for {release.studio_env} is invalid. [/]"
+                )
+                exit(1)
             self.download_failed.append(release)
             self.next_version_lock[release.key] = makeLock(release, "failed")
             with suppress(FileNotFoundError):
