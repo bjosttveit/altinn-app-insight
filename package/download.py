@@ -259,9 +259,13 @@ class QueryClient(BaseQueryClient):
             self.fetch_orgs_failed = True
             return None
 
-    async def get_clusters(self) -> list[Cluster]:
+    async def get_clusters(self) -> list[Cluster] | None:
         orgs_response = await self.fetch_orgs()
-        orgs = orgs_response["orgs"] if orgs_response is not None else {}
+
+        if not orgs_response:
+            return None
+
+        orgs = orgs_response["orgs"]
         clusters = [
             Cluster(env, org) for (org, org_data) in orgs.items() for env in get_valid_envs(org_data["environments"])
         ]
@@ -408,17 +412,20 @@ class QueryClient(BaseQueryClient):
     async def update_apps(self):
         with Status("Fetching clusters", console=self.console):
             clusters = await self.get_clusters()
-        self.console.print(f"[green]✓[/] Fetching clusters - {self.orgs_count} orgs, {self.cluster_count} clusters")
+        if clusters:
+            self.console.print(f"[green]✓[/] Fetching clusters - {self.orgs_count} orgs, {self.cluster_count} clusters")
+        else:
+            self.console.print(f":x-emoji:[red] Fetching clusters failed. [/]")
+            exit(1)
 
         with Live(self.progress_group, refresh_per_second=10, console=self.console):
-            if clusters is not None:
-                self.deployments_progress.update(self.deployments_task, total=len(clusters), visible=True)
-                await asyncio.gather(*[self.update_cluster(cluster) for cluster in clusters])
-                # The display has some trouble updating completely in Jupyter
-                self.deployments_progress.refresh()
-                self.apps_progress.refresh()
-                self.download_progress.refresh()
-                await asyncio.sleep(0.1)
+            self.deployments_progress.update(self.deployments_task, total=len(clusters), visible=True)
+            await asyncio.gather(*[self.update_cluster(cluster) for cluster in clusters])
+            # The display has some trouble updating completely in Jupyter
+            self.deployments_progress.refresh()
+            self.apps_progress.refresh()
+            self.download_progress.refresh()
+            await asyncio.sleep(0.1)
 
         self.remove_undeployed_apps()
         self.write_version_lock(self.next_version_lock)
