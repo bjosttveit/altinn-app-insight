@@ -1,0 +1,6 @@
+{
+    "ignoreMessagesPatterns": [
+        "\"await\" allowed only within async function",
+        "Use of \"async\" not allowed outside of async function"
+    ]
+}

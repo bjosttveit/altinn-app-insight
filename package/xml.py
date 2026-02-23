@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import random, string, re
 from functools import cache, cached_property
 from typing import cast, overload, Any
 from lxml import etree
-from lxml.etree import _Element
+from lxml.etree import _Element, XMLSyntaxError
 from elementpath import Selector
 from elementpath.xpath3 import XPath3Parser
 from pathlib import Path
@@ -12,6 +13,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 
+from package.context import log_warning
 from package.html_output import file_name_html
 from package.iter import IterContainer
 
@@ -21,6 +23,7 @@ parser = etree.XMLParser(remove_blank_text=True)
 ns_map = {
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
     "altinn": "http://altinn.no/process",
+    "altinn_no": "http://altinn.no",
     "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
     "bpmndi": "http://www.omg.org/spec/BPMN/20100524/DI",
     "dc": "http://www.omg.org/spec/DD/20100524/DC",
@@ -36,7 +39,11 @@ ns_map = {
 class Xml[X = _Element]:
     def __init__(self, element: bytes | X | None = None, file_path: str | None = None, remote_url: str | None = None):
         if isinstance(element, bytes):
-            self.element = etree.fromstring(element, parser=parser)
+            try:
+                self.element = etree.fromstring(element, parser=parser)
+            except XMLSyntaxError:
+                log_warning(f"XMLSyntaxError: {remote_url}")
+                self.element = None
         else:
             self.element = element
         self.file_path = file_path
@@ -137,7 +144,10 @@ class Xml[X = _Element]:
         if not isinstance(self.element, _Element):
             return IterContainer()
 
-        res = Xml.make_selector(query).select(self.element)
+        try:
+            res = Xml.make_selector(query).select(self.element)
+        except XMLSyntaxError:
+            return IterContainer()
 
         return IterContainer(res if isinstance(res, list) else [res]).map(
             lambda element: Xml(element, self.file_path, self.remote_url)
@@ -167,7 +177,9 @@ class ProcessTask(Xml):
     @cached_property
     def type(self):
         # Checks for <altinn:taskType>...</altinn:taskType> element and altinn:taskType="..." attribute
-        value = self.xpath(".//altinn:taskType/text() | ./@altinn:tasktype").first
+        value = self.xpath(
+            ".//altinn:taskType/text() | ./@altinn:tasktype | .//altinn_no:taskType/text() | ./@altinn_no:tasktype"
+        ).first
         if value is not None:
             return str(value)
 

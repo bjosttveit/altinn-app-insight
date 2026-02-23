@@ -1,0 +1,12 @@
+%matplotlib ipympl
+%load_ext autoreload
+%autoreload 0
+
+import matplotlib.pyplot
+matplotlib.pyplot.ioff()
+
+import asyncio
+from pathlib import Path
+
+from package.apps import Apps
+from package.download import QueryClient

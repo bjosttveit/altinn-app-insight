@@ -3,7 +3,7 @@ from typing import Literal, TypedDict
 
 FETCH_FAILED = "fetch-failed"
 
-type Environment = Literal["prod", "tt02"]
+type Environment = Literal["prod", "tt02", "at22", "at23", "at24", "yt01"]
 type StudioEnvironment = Literal["prod", "staging", "dev"]
 type VersionLock = dict[str, LockData]
 type Status = Literal["success", "failed"]
@@ -89,6 +89,14 @@ def get_valid_envs(raw_envs: list[str]) -> list[Environment]:
     out: list[Environment] = []
     for raw in raw_envs:
         match raw:
+            case "at22":
+                out.append("at22")
+            case "at23":
+                out.append("at23")
+            case "at24":
+                out.append("at24")
+            case "yt01":
+                out.append("yt01")
             case "tt02":
                 out.append("tt02")
             case "production":

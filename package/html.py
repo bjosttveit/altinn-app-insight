@@ -4,7 +4,7 @@ from functools import cache, cached_property
 from typing import overload, Any
 
 from lxml import html
-from lxml.etree import _Element
+from lxml.etree import _Element, XMLSyntaxError
 from elementpath import Selector
 from elementpath.xpath3 import XPath3Parser
 from pathlib import Path
@@ -123,7 +123,10 @@ class Html[X = _Element]:
         if not isinstance(self.element, _Element):
             return IterContainer()
 
-        res = Html.make_selector(query).select(self.element)
+        try:
+            res = Html.make_selector(query).select(self.element)
+        except XMLSyntaxError:
+            return IterContainer()
 
         return IterContainer(res if isinstance(res, list) else [res]).map(
             lambda element: Html(element, self.file_path, self.remote_url)

@@ -1,8 +1,9 @@
 from __future__ import annotations
 import random, string
+from itertools import combinations
 from functools import cached_property
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Iterable, cast
 import re
 
 from pygments import highlight
@@ -14,7 +15,8 @@ from package.iter import IterContainer
 
 type Js = Literal["js"]
 type Cs = Literal["cs"]
-type CodeLanguage = Js | Cs
+type Dockerfile = Literal["dockerfile"]
+type CodeLanguage = Js | Cs | Dockerfile
 type Lines = tuple[int, int] | None
 
 
@@ -47,6 +49,12 @@ class Code[L: CodeLanguage]:
         content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None, lines: Lines = None
     ) -> Code[Js]:
         return Code("js", content, file_path, remote_url, lines)
+
+    @staticmethod
+    def dockerfile(
+        content: bytes | None = None, file_path: str | None = None, remote_url: str | None = None, lines: Lines = None
+    ) -> Code[Dockerfile]:
+        return Code("dockerfile", content, file_path, remote_url, lines)
 
     @property
     def file_name(self):
@@ -111,3 +119,33 @@ class Code[L: CodeLanguage]:
 
     def find(self, pattern: str, group: int = 0):
         return self.find_all(pattern, group).first
+
+
+def escape_predicate(text: str) -> str:
+    return text.replace('"', r"\"")
+
+
+def build_sequence_predicate(patterns: Iterable[str]) -> str:
+    if not patterns:
+        return ""
+
+    joined_patterns = "\n.\n".join(patterns)
+    return f".\n{joined_patterns}"
+
+
+def build_set_predicate(patterns: Iterable[str], capture_name: str) -> str:
+    _patterns = list(patterns)
+    if not _patterns:
+        return ""
+
+    n_patterns = len(_patterns)
+    alternation_block = f"[\n{'\n'.join(_patterns)}\n]"
+    repeated_alternations = "\n".join([f"{alternation_block} @{capture_name}.{i}" for i in range(n_patterns)])
+    uniqueness_predicates = "\n".join(
+        [f"(#not-eq? @{capture_name}.{i} @{capture_name}.{j})" for i, j in combinations(range(n_patterns), 2)]
+    )
+
+    return f"""
+        {repeated_alternations}
+        {uniqueness_predicates}
+        """

@@ -1,10 +1,11 @@
 from __future__ import annotations
+from itertools import starmap
 from functools import cache, cached_property
 from typing import NotRequired, TypedDict, Unpack, cast, Sequence
 import tree_sitter_c_sharp as ts_cs
-from tree_sitter import Language, Node, Parser, Query
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from package.code import Code, Cs, Lines
+from package.code import Code, Cs, Lines, build_sequence_predicate, build_set_predicate, escape_predicate
 from package.iter import IterContainer
 
 CS_LANGUAGE = Language(ts_cs.language())
@@ -40,7 +41,7 @@ class CsCode(Code[Cs]):
     def query(self, query_str: str) -> list[CsCode]:
         if self.node is None:
             return []
-        matches = CsCode.build_query(query_str).captures(self.node).get("output")
+        matches = QueryCursor(CsCode.build_query(query_str)).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
@@ -68,11 +69,7 @@ class CsCode(Code[Cs]):
                 map(
                     # TODO: Should this pattern be used elsewhere?
                     lambda interface: f"""
-                        [
-                            (identifier) @interface.name
-                            (generic_name
-                                (identifier) @interface.name)
-                        ]
+                        {build_generic_identifier('interface.name')}
                         (#any-eq? @interface.name "{interface}")""",
                     implements,
                 )
@@ -103,17 +100,13 @@ class CsCode(Code[Cs]):
             else ""
         )
 
-        return IterContainer(
-            self.query(
-                f"""
+        return IterContainer(self.query(f"""
                 (class_declaration
                     {modifiers_restriction}
                     name: (identifier) @class.name
                     {name_restriction}
                     {implements_restriction}) @output
-                """
-            )
-        )
+                """))
 
     class MethodArgs(TypedDict):
         name: NotRequired[str]
@@ -157,9 +150,7 @@ class CsCode(Code[Cs]):
             else ""
         )
 
-        return IterContainer(
-            self.query(
-                f"""
+        return IterContainer(self.query(f"""
                 (method_declaration
                     {modifiers_restriction}
                     returns: (_) @method.returns
@@ -168,30 +159,66 @@ class CsCode(Code[Cs]):
                     {name_restriction}
                     parameters: (parameter_list
                     {parameter_types_restriction})) @output
-                """
-            )
-        )
+                """))
 
     class FunctionInvocationArgs(TypedDict):
         name: NotRequired[str]
+        positional_arguments: NotRequired[Sequence[str | None]]
+        named_arguments: NotRequired[Sequence[tuple[str | None, str | None]]]
 
     def function_invocations(self, **kwargs: Unpack[FunctionInvocationArgs]) -> IterContainer[CsCode]:
-        name = kwargs.get("name")
-        name_restriction = f'(#eq? @function.name "{name}")' if name is not None else ""
-
-        return IterContainer(
-            self.query(
-                f"""
-                (invocation_expression
-                    function: [
-                        (identifier) @function.name
-                        (generic_name
-                            (identifier) @function.name)
-                    ]
-                    {name_restriction}) @output
-                """
-            )
+        name, positional_arguments, named_arguments = (
+            kwargs.get("name"),
+            kwargs.get("positional_arguments"),
+            kwargs.get("named_arguments"),
         )
+
+        name_restriction = f'(#eq? @function.name "{name}")' if name is not None else ""
+        positional_arguments_restriction = (
+            build_sequence_predicate(
+                starmap(
+                    lambda idx, argument: f"""
+                    (argument
+                        !name) @pos_argument.{idx}
+                    """
+                    + (f'(#eq? @pos_argument.{idx} "{escape_predicate(argument)}")' if argument is not None else ""),
+                    enumerate(positional_arguments),
+                )
+            )
+            if positional_arguments is not None
+            else ""
+        )
+        named_arguments_restriction = (
+            build_set_predicate(
+                starmap(
+                    lambda idx, name_arg: f"""
+                    (argument
+                        name: (identifier) @name_argument.name.{idx}
+                        (_) @name_argument.value.{idx}
+                    """
+                    + (f'(#eq? @name_argument.name.{idx} "{name_arg[0]}")' if name_arg[0] is not None else "")
+                    + (
+                        f'\n(#eq? @name_argument.value.{idx} "{escape_predicate(name_arg[1])}")'
+                        if name_arg[1] is not None
+                        else ""
+                    )
+                    + ")",
+                    enumerate(named_arguments),
+                ),
+                "name_argument",
+            )
+            if named_arguments is not None
+            else ""
+        )
+
+        return IterContainer(self.query(f"""
+                (invocation_expression
+                    function: {build_generic_member_access_identifier('function.name')}
+                    {name_restriction}
+                    arguments: (argument_list
+                    {positional_arguments_restriction}
+                    {named_arguments_restriction})) @output
+                """))
 
     class ObjectArgs(TypedDict):
         type: NotRequired[str | None]
@@ -226,16 +253,22 @@ class CsCode(Code[Cs]):
             else ""
         )
 
-        return IterContainer(
-            self.query(
-                f"""
+        return IterContainer(self.query(f"""
                 (object_creation_expression
                     type: (identifier) @object.type
                     {type_restriction}
                     {initializer_restriction}) @output
-                """
-            )
-        )
+                """))
+
+    class IdentifierArgs(TypedDict):
+        name: str
+
+    def identifiers(self, **kwargs: Unpack[IdentifierArgs]) -> IterContainer[CsCode]:
+        name = kwargs.get("name")
+        return IterContainer(self.query(f"""
+                ((identifier) @name
+                (#eq? @name "{name}")) @output
+                """))
 
 
 class AppServiceArgs(TypedDict):
@@ -259,8 +292,7 @@ class ProgramCs(CsCode):
         # services.Add.*<interface_name, .*>(.*);
         # where "services" matches the argument of type IServiceCollection
         # and "interface_name" matches the kwarg if specified
-        matches = self.query(
-            f"""
+        matches = self.query(f"""
             (local_function_statement
                 name: (identifier) @register_func.name
                 (#eq? @register_func.name "RegisterCustomAppServices")
@@ -283,10 +315,34 @@ class ProgramCs(CsCode):
                                         {interface_name_restriction}
                                         (identifier) @output)))
                             arguments: (_)))))
-                """
-        )
+                """)
         return (
             IterContainer(matches)
             .map(lambda code: cast(str, code.text))
             .filter(lambda service_name: service_name != None)
         )
+
+
+def build_generic_identifier(capture_name: str) -> str:
+    return f"""
+            [
+                (identifier) @{capture_name}
+                (generic_name
+                    (identifier) @{capture_name})
+            ]
+            """
+
+
+def build_generic_member_access_identifier(capture_name: str) -> str:
+    return f"""
+            [
+                (identifier) @{capture_name}
+                (generic_name
+                    (identifier) @{capture_name})
+                (member_access_expression
+                    name: (identifier) @{capture_name})
+                (member_access_expression
+                    name: (generic_name
+                        (identifier) @{capture_name}))
+            ]
+            """

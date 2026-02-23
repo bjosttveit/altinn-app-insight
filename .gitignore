@@ -79,7 +79,7 @@ target/
 .ipynb_checkpoints
 .virtual_documents
 .jupyter/*
-!.jupyter/jupyter_server_config.json
+!.jupyter/jupyter_server_config.py
 !.jupyter/lab/
 .jupyter/lab/*
 !.jupyter/lab/user-settings/
@@ -89,6 +89,7 @@ target/
 !.ipython/profile_default/
 .ipython/profile_default/*
 !.ipython/profile_default/ipython_config.json
+!.ipython/profile_default/startup/
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

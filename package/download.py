@@ -106,7 +106,12 @@ class BaseQueryClient:
             return await self.fetch_json(url, attempt + 1)
 
     async def download_file(
-        self, url: str, file_path: Path, token: str, on_progress: Callable[[int, int], None] | None = None, attempt=1
+        self,
+        url: str,
+        file_path: Path,
+        token: str,
+        on_progress: Callable[[int | None, int | None], None] | None = None,
+        attempt=1,
     ):
         try:
             async with self.request_queue(url):
@@ -118,7 +123,8 @@ class BaseQueryClient:
                         headers={"Authorization": f"token {token}"},
                     ) as response:
                         response.raise_for_status()
-                        total = int(response.headers["Content-Length"])
+                        content_length = response.headers.get("Content-Length", None)
+                        total = int(content_length) if content_length is not None else None
                         if on_progress:
                             on_progress(response.num_bytes_downloaded, total)
 
@@ -225,6 +231,18 @@ class QueryClient(BaseQueryClient):
     def lock_path(self):
         return self.cache_dir.joinpath(".apps.lock.json")
 
+    def print_failed_apps(self):
+        version_lock = self.read_version_lock()
+        print("Failed apps:")
+        for data in version_lock.values():
+            if data["status"] == "failed":
+                url = (
+                    f'https://altinn.studio/repos/{data["org"]}/{data["app"]}'
+                    if data["studio_env"] == "prod"
+                    else f'https://{data["studio_env"]}.altinn.studio/repos/{data["org"]}/{data["app"]}'
+                )
+                print(f'{data["env"]}/{data["org"]}/{data["app"]}: {url}')
+
     def read_version_lock(self) -> VersionLock:
         if not self.lock_path.exists():
             return {}
@@ -279,6 +297,8 @@ class QueryClient(BaseQueryClient):
                 f"https://{cluster.org}.apps.altinn.no/kuberneteswrapper/api/v1/deployments"
                 if cluster.env == "prod"
                 else f"https://{cluster.org}.apps.{cluster.env}.altinn.no/kuberneteswrapper/api/v1/deployments"
+                if cluster.env == "tt02"
+                else f"https://{cluster.org}.apps.{cluster.env}.altinn.cloud/kuberneteswrapper/api/v1/deployments"
             )
             self.fetch_deployments_success.append(cluster)
             return res
@@ -499,10 +519,11 @@ class QueryClient(BaseQueryClient):
             self.next_version_lock[release.key] = makeLock(release, "success")
         except Exception as e:
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401:
-                self.console.print(
-                    f":x-emoji: [red] Token for {release.studio_env} is invalid. [/]"
-                )
+                self.console.print(f":x-emoji: [red] Token for {release.studio_env} is invalid. [/]")
                 exit(1)
+
+            if self.debug:
+                self.console.print_exception()
             self.download_failed.append(release)
             self.next_version_lock[release.key] = makeLock(release, "failed")
             with suppress(FileNotFoundError):

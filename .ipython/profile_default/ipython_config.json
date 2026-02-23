@@ -1,6 +1,6 @@
 {
   "IPCompleter": {
     "use_jedi": false,
-    "evaluation": "forbidden"
+    "evaluation": "minimal"
   }
 }

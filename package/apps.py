@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextvars
 from typing import TYPE_CHECKING, overload, Any
 
 from numpy.typing import ArrayLike
 
+from package.code import Code, Dockerfile
+from package.context import app_context, make_warnings_ctx, print_warnings
 from package.cs import CsCode, ProgramCs
 from package.html import Html
 from package.html_output import tabulate_html, JupyterHTMLStr
@@ -66,6 +69,10 @@ class App:
         return f"{self.org}-{self.app}"
 
     @property
+    def identifier(self):
+        return f"{self.org}/{self.app} ({self.env})"
+
+    @property
     def file_name(self):
         return f"{self.key}.zip"
 
@@ -121,13 +128,15 @@ class App:
 
     # Uses a context manager to make sure any file operations are closed
     # Does not open any files yet, this happens lazily only when needed
+    # Also sets a context-variable for logging purposes
     @staticmethod
     def wrap_open_app[T](__func: Callable[[App], T]) -> Callable[[App], T]:
-        def func(app: App):
-            with app as open_app:
-                result = __func(open_app)
-                result.__repr__()  # Make sure iterators are consumed while we are open
-                return result
+        def func(app: App) -> T:
+            with app_context(app):
+                with app as open_app:
+                    result = __func(open_app)
+                    result.__repr__()  # Make sure iterators are consumed while we are open
+                    return result
 
         return func
 
@@ -323,9 +332,30 @@ class App:
             .first_or_default(Xml())
         )
 
+    # MODEL_FILE_REGEX = r"/App/models/(.+)\.(xsd|cs|schema\.json|validation\.json)$"
+
+    # @cached_property
+    # def datamodels(self) -> IterContainer[DataModel]:
+    #
+    #     IterContainer(self.files) \
+    #     .map(lambda file: re.search(App.MODEL_FILE_REGEX, file)) \
+    #     .filter(lambda match: match is not None)
+    #     # .filter(lambda path: re.search(file_pattern, path) is not None)
+    #     # .map(lambda path: (self.content.read(path), path, self.get_remote_file_url(path)))
+    #     self.files_matching(App.MODEL_FILE_REGEX).group_by(lambda args: re.search(App.MODEL_FILE_REGEX, args[2]).group(1))
+    #     pass
+
     @cached_property
     def csproj(self) -> IterContainer[Xml]:
         return self.files_matching(r"\.csproj$").map(lambda args: Xml(*args)).filter(lambda file: file.exists)
+
+    @cached_property
+    def dockerfile(self) -> Code[Dockerfile]:
+        return (
+            self.files_matching(r"Dockerfile")
+            .map(lambda args: Code.dockerfile(*args))
+            .first_or_default(Code.dockerfile())
+        )
 
     @cached_property
     def frontend_version(self) -> Version:
@@ -396,10 +426,16 @@ class Apps(IterController[App]):
 
     def data_table(self, raw=False):
         headers = ["Env", "Org", "App", *self.list[0].data_keys]
-        rows = [[app.env, app.org, app.app, *map(lambda value: value if raw else str(value), app.data_values)] for app in self.list]
+        rows = [
+            [app.env, app.org, app.app, *map(lambda value: value if raw else str(value), app.data_values)]
+            for app in self.list
+        ]
         return headers, rows
 
     def table(self):
+        self.list  # Consume iterator
+        print_warnings()
+
         if self.length == 0:
             print("Count: 0")
             return self
@@ -411,6 +447,9 @@ class Apps(IterController[App]):
         return self
 
     def text_table(self):
+        self.list  # Consume iterator
+        print_warnings()
+
         print(self)
         return self
 
@@ -437,7 +476,11 @@ class Apps(IterController[App]):
 
         payload = base64.b64encode(output.encode()).decode()
         file_name_extension = f"{file_name.removesuffix('.csv')}.csv"
-        display_html(JupyterHTMLStr(f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'))
+        display_html(
+            JupyterHTMLStr(
+                f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'
+            )
+        )
         return self
 
     @classmethod
@@ -464,7 +507,14 @@ class Apps(IterController[App]):
                     )
                 )
 
-        executor = ThreadPoolExecutor(max_workers=max_open_files)
+        make_warnings_ctx()
+        args = (contextvars.copy_context(),)
+
+        def set_context(context: contextvars.Context):
+            for var, value in context.items():
+                var.set(value)
+
+        executor = ThreadPoolExecutor(max_workers=max_open_files, initializer=set_context, initargs=args)
 
         return cls(IterContainer(apps, executor))
 
@@ -577,7 +627,13 @@ class GroupedApps(IterController[Apps]):
 
     def data_table(self, raw=False):
         headers = [*self.list[0].group_keys, *self.list[0].data_keys]
-        rows = [[*map(lambda value: str(value), group.group_values), *map(lambda value: value if raw else str(value), group.data_values)] for group in self.list]
+        rows = [
+            [
+                *map(lambda value: str(value), group.group_values),
+                *map(lambda value: value if raw else str(value), group.data_values),
+            ]
+            for group in self.list
+        ]
         return headers, rows
 
     def table(self):
@@ -618,7 +674,11 @@ class GroupedApps(IterController[Apps]):
 
         payload = base64.b64encode(output.encode()).decode()
         file_name_extension = f"{file_name.removesuffix('.csv')}.csv"
-        display_html(JupyterHTMLStr(f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'))
+        display_html(
+            JupyterHTMLStr(
+                f'<a download="{file_name_extension}" href="data:text/csv;base64,{payload}" target="_blank">{file_name_extension}</a>'
+            )
+        )
         return self
 
     @overload

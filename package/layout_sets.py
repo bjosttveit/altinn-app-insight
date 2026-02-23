@@ -4,7 +4,7 @@ from functools import cache, cached_property
 from typing import NotRequired, Self, TypedDict, Unpack
 
 import tree_sitter_javascript as ts_js
-from tree_sitter import Language, Node, Parser, Query
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
 from package.code import Code, Js, Lines
 from package.json import Json
@@ -128,7 +128,7 @@ class JsCode(Code[Js]):
     def query(self, query_str: str) -> list[JsCode]:
         if self.node is None:
             return []
-        matches = JsCode.build_query(query_str).captures(self.node).get("output")
+        matches = QueryCursor(JsCode.build_query(query_str)).captures(self.node).get("output")
         if matches is None or len(matches) == 0:
             return []
         return (
@@ -145,9 +145,7 @@ class JsCode(Code[Js]):
         variable_name_restriction = f'(#eq? @variable.name "{variable_name}")' if variable_name is not None else ""
         propery_name_restriction = f'(#eq? @prop.name "{propery_name}")' if propery_name is not None else ""
 
-        return IterContainer(
-            self.query(
-                f"""
+        return IterContainer(self.query(f"""
                 (variable_declaration
                     (variable_declarator 
                         name: (identifier) @variable.name
@@ -157,9 +155,7 @@ class JsCode(Code[Js]):
                                 key: (property_identifier) @prop.name
                                 {propery_name_restriction}
                                 value: (_)) @output)))
-                """
-            )
-        )
+                """))
 
 
 class RuleHandler(JsCode):
