@@ -332,19 +332,6 @@ class App:
             .first_or_default(Xml())
         )
 
-    # MODEL_FILE_REGEX = r"/App/models/(.+)\.(xsd|cs|schema\.json|validation\.json)$"
-
-    # @cached_property
-    # def datamodels(self) -> IterContainer[DataModel]:
-    #
-    #     IterContainer(self.files) \
-    #     .map(lambda file: re.search(App.MODEL_FILE_REGEX, file)) \
-    #     .filter(lambda match: match is not None)
-    #     # .filter(lambda path: re.search(file_pattern, path) is not None)
-    #     # .map(lambda path: (self.content.read(path), path, self.get_remote_file_url(path)))
-    #     self.files_matching(App.MODEL_FILE_REGEX).group_by(lambda args: re.search(App.MODEL_FILE_REGEX, args[2]).group(1))
-    #     pass
-
     @cached_property
     def csproj(self) -> IterContainer[Xml]:
         return self.files_matching(r"\.csproj$").map(lambda args: Xml(*args)).filter(lambda file: file.exists)
